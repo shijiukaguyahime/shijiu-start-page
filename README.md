@@ -1,6 +1,13 @@
 # Start — 极简浏览器起始页
 
-一比一复刻 [limestart.cn](https://www.limestart.cn/) 的极简起始页，纯前端实现（Next.js App Router + TypeScript + Tailwind + motion）。
+仿 [limestart.cn](https://www.limestart.cn/) 的极简起始页，纯前端实现（Next.js App Router + TypeScript + Tailwind + motion）。
+目前正在开发中。。。
+
+## 截图
+<img width="1919" height="920" alt="image" src="https://github.com/user-attachments/assets/01501bb8-1f5c-45bd-bbd0-4e1b438e1918" />
+<img width="1916" height="915" alt="image" src="https://github.com/user-attachments/assets/cdb0984b-067b-4ba1-90be-fbd15a2f2b43" />
+<img width="1920" height="920" alt="image" src="https://github.com/user-attachments/assets/1af3e3df-c33a-4b0b-9b11-a393883214fa" />
+
 
 ## 页面构成（仅四项）
 
