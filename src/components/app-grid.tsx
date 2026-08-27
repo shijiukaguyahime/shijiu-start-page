@@ -17,12 +17,16 @@ function buildItems(): GridItem[] {
   return base.map((b) => ({ ...b, w: 1 as const, h: 1 as const }));
 }
 
-export function AppGrid({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [groupIdx, setGroupIdx] = useState(0);
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  groupIdx: number;
+  onGroupChange: React.Dispatch<React.SetStateAction<number>>;
+};
+
+export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
   const [items, setItems] = useState<GridItem[]>(() => buildItems());
   const reduce = useReducedMotion();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const outerRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const gridScrollRef = useRef<HTMLDivElement>(null);
 
@@ -38,6 +42,12 @@ export function AppGrid({ open, onClose }: { open: boolean; onClose: () => void 
 
   useEffect(() => {
     if (!open || !gridRef.current) return;
+    // 移动端禁用拖拽，避免与垂直滚动手势冲突
+    if (typeof window !== "undefined") {
+      const isCoarse = window.matchMedia("(pointer: coarse)").matches;
+      const isNarrow = window.matchMedia("(max-width: 768px)").matches;
+      if (isCoarse || isNarrow) return;
+    }
     const el = gridRef.current;
     const sortable = Sortable.create(el, {
       animation: 150,
@@ -74,60 +84,27 @@ export function AppGrid({ open, onClose }: { open: boolean; onClose: () => void 
       if (gridScrollRef.current?.contains(target)) return;
       if (Math.abs(e.deltaX) < Math.abs(e.deltaY)) {
         if (e.deltaY > 8 || e.deltaY < -8) e.preventDefault();
-        if (e.deltaY > 10) setGroupIdx((i) => (i + 1) % groups.length);
-        else if (e.deltaY < -10) setGroupIdx((i) => (i - 1 + groups.length) % groups.length);
+        if (e.deltaY > 10) onGroupChange((i) => (i + 1) % groups.length);
+        else if (e.deltaY < -10) onGroupChange((i) => (i - 1 + groups.length) % groups.length);
       }
     }
     window.addEventListener("wheel", onWheel, { passive: false });
     return () => window.removeEventListener("wheel", onWheel);
-  }, [open, groups.length]);
+  }, [open, groups.length, onGroupChange]);
 
   if (!open) return null;
 
   return (
-    <div
-      ref={outerRef}
-      className="flex w-full max-w-[880px] flex-1 flex-col min-h-0"
-      data-grid
-    >
-      <div className="mb-3 flex w-full shrink-0 items-center">
-        <div
-          ref={containerRef}
-          className="flex flex-1 items-center gap-1.5 overflow-x-auto scroll-smooth px-1 py-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          {groups.map((title, idx) => (
-            <button
-              key={title}
-              onClick={() => setGroupIdx(idx)}
-              className={
-                idx === groupIdx
-                  ? "shrink-0 rounded-full bg-zinc-900 px-3.5 py-1.5 text-sm font-medium text-white shadow"
-                  : "shrink-0 rounded-full bg-white/70 px-3.5 py-1.5 text-sm font-medium text-zinc-600 backdrop-blur hover:bg-white/90"
-              }
-            >
-              {title}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div
-        ref={gridScrollRef}
-        className="relative max-h-[48vh] flex-1 overflow-y-auto overscroll-contain px-1 py-1 md:max-h-[52vh] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >
+    <div ref={gridScrollRef} className="flex w-full max-w-[880px] flex-1 flex-col min-h-0" data-grid>
+      {/* 图标宫格：gap 统一 */}
+      <div className="relative flex-1 overflow-y-auto overscroll-contain px-2 py-2 md:max-h-[52vh] max-h-[56vh] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.div
             key={groupIdx}
             ref={gridRef}
-            initial={
-              reduce ? { opacity: 0 } : { opacity: 0, y: 8, filter: "blur(6px)" }
-            }
-            animate={
-              reduce ? { opacity: 1 } : { opacity: 1, y: 0, filter: "blur(0px)" }
-            }
-            exit={
-              reduce ? { opacity: 0 } : { opacity: 0, y: -6, filter: "blur(6px)" }
-            }
+            initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8, filter: "blur(6px)" }}
+            animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, filter: "blur(0px)" }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, y: -6, filter: "blur(6px)" }}
             transition={
               reduce
                 ? { duration: 0.14 }
@@ -137,8 +114,7 @@ export function AppGrid({ open, onClose }: { open: boolean; onClose: () => void 
                     filter: { duration: 0.22, ease: "easeOut" },
                   }
             }
-            style={{ willChange: "transform, opacity, filter" }}
-            className="grid auto-rows-fr grid-cols-4 gap-3 md:grid-cols-6 lg:grid-cols-8 md:gap-3 will-change-transform [backface-visibility:hidden]"
+            className="grid auto-rows-fr grid-cols-4 gap-4 md:grid-cols-6 md:gap-4 lg:grid-cols-8 lg:gap-5 gpu"
           >
             {displayItems.map((item, idx) => {
               const spanClass =
@@ -156,9 +132,7 @@ export function AppGrid({ open, onClose }: { open: boolean; onClose: () => void 
                     key={item.id}
                     data-draggable
                     data-id={item.id}
-                    initial={
-                      reduce ? false : { opacity: 0, y: 8, filter: "blur(4px)" }
-                    }
+                    initial={reduce ? false : { opacity: 0, y: 8, filter: "blur(4px)" }}
                     animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                     transition={
                       reduce
@@ -169,8 +143,7 @@ export function AppGrid({ open, onClose }: { open: boolean; onClose: () => void 
                             ease: [0.22, 1, 0.36, 1],
                           }
                     }
-                    style={{ willChange: "transform, opacity, filter" }}
-                    className={`${spanClass} group/widget relative overflow-hidden rounded-[18px] border border-white/40 bg-white p-3 shadow-sm will-change-transform`}
+                    className={`${spanClass} group/widget relative overflow-hidden rounded-[18px] border border-white/40 bg-white p-3 shadow-sm gpu`}
                   >
                     <WidgetContent item={item} />
                   </motion.div>
@@ -185,9 +158,7 @@ export function AppGrid({ open, onClose }: { open: boolean; onClose: () => void 
                   href={item.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  initial={
-                    reduce ? false : { opacity: 0, y: 8, filter: "blur(4px)" }
-                  }
+                  initial={reduce ? false : { opacity: 0, y: 8, filter: "blur(4px)" }}
                   animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                   transition={
                     reduce
@@ -198,13 +169,12 @@ export function AppGrid({ open, onClose }: { open: boolean; onClose: () => void 
                           ease: [0.22, 1, 0.36, 1],
                         }
                   }
-                  style={{ willChange: "transform, opacity, filter" }}
-                  className={`${spanClass} group/app flex flex-col items-center justify-center gap-1 bg-transparent p-1 text-center will-change-transform`}
+                  className={`${spanClass} group/app flex flex-col items-center justify-center gap-2 py-1 text-center gpu`}
                 >
-                  <span className="flex size-16 items-center justify-center rounded-2xl bg-white shadow-[0_2px_10px_rgba(0,0,0,0.12)] transition-[transform,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/app:shadow-md group-hover/app:scale-[1.02] md:size-16 will-change-transform">
+                  <span className="flex size-16 items-center justify-center rounded-2xl bg-white shadow-[0_2px_10px_rgba(0,0,0,0.12)] transition-[transform,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/app:shadow-md group-hover/app:scale-[1.02] md:size-16 gpu">
                     <Favicon url={item.url} name={item.name} color={item.color} />
                   </span>
-                  <span className="line-clamp-1 w-full truncate px-1 text-xs font-medium leading-none text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.4)]">{item.name}</span>
+                  <span className="line-clamp-1 w-full truncate px-1 text-xs font-medium leading-tight text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.4)]">{item.name}</span>
                 </motion.a>
               );
             })}
@@ -229,10 +199,7 @@ function Favicon({ url, name, color }: { url?: string; name: string; color?: str
     return <img src={src} alt="" width={22} height={22} className="size-[22px] object-contain" loading="lazy" />;
   }
   return (
-    <span
-      className="flex size-7 items-center justify-center rounded-lg text-xs font-bold text-white"
-      style={{ background: color ?? "#18181b" }}
-    >
+    <span className="flex size-7 items-center justify-center rounded-lg text-xs font-bold text-white" style={{ background: color ?? "#18181b" }}>
       {name.charAt(0)}
     </span>
   );

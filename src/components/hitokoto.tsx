@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { CopyIcon, MagnifyingGlassIcon, DotsThreeIcon } from "@phosphor-icons/react";
 import { SEARCH_ENGINES } from "@/lib/data";
 import { cn } from "@/lib/utils";
+import { limeDropdownMotion, useClickOutside } from "@/lib/hooks";
 
 type Hitokoto = {
   hitokoto: string;
@@ -16,6 +18,7 @@ export function Hitokoto() {
   const [showMenu, setShowMenu] = useState(false);
   const [copied, setCopied] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const reduce = useReducedMotion();
 
   useEffect(() => {
     let cancelled = false;
@@ -32,16 +35,12 @@ export function Hitokoto() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!showMenu) return;
-    function onDown(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setShowMenu(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [showMenu]);
+  // 统一点击外部关闭：判定以整个一言容器（含按钮与下拉）为边界，外部 mousedown 即收起
+  useClickOutside(
+    containerRef as React.RefObject<HTMLElement | null>,
+    () => setShowMenu(false),
+    showMenu,
+  );
 
   if (!data) return null;
 
@@ -49,6 +48,7 @@ export function Hitokoto() {
   const fullText = data.hitokoto;
 
   function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation();
     navigator.clipboard.writeText(fullText).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
@@ -57,6 +57,7 @@ export function Hitokoto() {
   }
 
   function handleSearch(e: React.MouseEvent) {
+    e.stopPropagation();
     const saved = typeof window !== "undefined" ? localStorage.getItem("startpage:engine") : null;
     const eng = SEARCH_ENGINES.find((x) => x.id === saved) ?? SEARCH_ENGINES[0];
     window.open(eng.url.replace("{q}", encodeURIComponent(fullText)), "_blank", "noopener");
@@ -68,13 +69,15 @@ export function Hitokoto() {
       ref={containerRef}
       className="group relative w-full"
       onMouseLeave={() => setShowMenu(false)}
+      // 关键：点击一言任意区域不让搜索输入框失焦（左键点击下拉框不再取消聚焦），通过 preventDefault 阻止 mousedown 抢焦点
+      onMouseDown={(e) => e.preventDefault()}
       data-hitokoto-menu
     >
       <div
         className={cn(
           "relative w-full rounded-2xl px-4 py-4 text-center transition-all duration-500",
           "bg-transparent",
-          "group-hover:bg-white/20 group-hover:backdrop-blur-[18px] group-hover:backdrop-saturate-[160%] group-hover:shadow-[0_8px_32px_rgba(0,0,0,0.12)]"
+          "group-hover:bg-white/20 group-hover:backdrop-blur-[18px] group-hover:backdrop-saturate-[160%] group-hover:shadow-[0_8px_32px_rgba(0,0,0,0.12)]",
         )}
       >
         <p className="text-center text-sm font-medium leading-relaxed text-white drop-shadow-[0_1px_8px_rgba(0,0,0,0.35)]">
@@ -90,45 +93,70 @@ export function Hitokoto() {
             aria-label="一言选项"
             aria-haspopup="menu"
             aria-expanded={showMenu}
-            onClick={() => setShowMenu((v) => !v)}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMenu((v) => !v);
+            }}
             className="relative z-20 flex size-7 items-center justify-center rounded-full bg-white/70 text-zinc-600 opacity-0 shadow-sm ring-1 ring-black/5 transition-all duration-300 hover:bg-white hover:text-zinc-900 group-hover:opacity-100"
           >
             <DotsThreeIcon weight="bold" className="size-4" aria-hidden />
           </button>
 
-          {showMenu && (
-            <ul
-              role="menu"
-              className="absolute bottom-auto left-auto right-[calc(100%+8px)] top-0 z-30 w-[148px] overflow-hidden rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-lg md:bottom-auto md:left-auto md:right-0 md:top-[calc(100%+8px)]"
-            >
-              <li role="none">
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleCopy}
-                  className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-900/5"
-                >
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/70 text-zinc-600 shadow-sm ring-1 ring-black/5">
-                    <CopyIcon weight="bold" className="size-3.5" aria-hidden />
-                  </span>
-                  {copied ? "已复制" : "复制"}
-                </button>
-              </li>
-              <li role="none">
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleSearch}
-                  className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-900/5"
-                >
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/70 text-zinc-600 shadow-sm ring-1 ring-black/5">
-                    <MagnifyingGlassIcon weight="bold" className="size-3.5" aria-hidden />
-                  </span>
-                  搜索
-                </button>
-              </li>
-            </ul>
-          )}
+          <AnimatePresence>
+            {showMenu && (
+              <motion.ul
+                role="menu"
+                initial={reduce ? { opacity: 0 } : (limeDropdownMotion.initial as unknown as never)}
+                animate={reduce ? { opacity: 1 } : (limeDropdownMotion.animate as unknown as never)}
+                exit={reduce ? { opacity: 0 } : (limeDropdownMotion.exit as unknown as never)}
+                transition={reduce ? ({ duration: 0.14 } as unknown as never) : (limeDropdownMotion.transition as unknown as never)}
+                style={{ transformOrigin: "top right" }}
+                // 阻止点击下拉内部冒泡到 document/page 的空白处收起宫格逻辑
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="dropdown-panel gpu absolute bottom-auto left-auto right-[calc(100%+8px)] top-0 z-30 w-[148px] origin-top-right overflow-hidden rounded-2xl p-1.5 md:bottom-auto md:left-auto md:right-0 md:top-[calc(100%+8px)]"
+              >
+                <li role="none">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleCopy}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-900/5"
+                  >
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/70 text-zinc-600 shadow-sm ring-1 ring-black/5">
+                      <CopyIcon weight="bold" className="size-3.5" aria-hidden />
+                    </span>
+                    {copied ? "已复制" : "复制"}
+                  </button>
+                </li>
+                <li role="none">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handleSearch}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-900/5"
+                  >
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/70 text-zinc-600 shadow-sm ring-1 ring-black/5">
+                      <MagnifyingGlassIcon weight="bold" className="size-3.5" aria-hidden />
+                    </span>
+                    搜索
+                  </button>
+                </li>
+              </motion.ul>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </div>

@@ -21,7 +21,7 @@ export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
     <div aria-hidden className="fixed inset-0 -z-10 bg-zinc-800 overflow-hidden">
       {/* 底色 + 扩展 24px 的图片层，避免 blur 在 <320px 窄屏边缘采样到透明而出现白边 */}
       <div
-        className="absolute -inset-6 bg-cover bg-center will-change-transform [backface-visibility:hidden] [transform:translateZ(0)] transition-[filter,transform,opacity] duration-[620ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+        className="gpu absolute -inset-6 bg-cover bg-center transition-[filter,transform,opacity] duration-[620ms] ease-[var(--spring)]"
         style={{
           backgroundImage: `url(${WALLPAPER_URL})`,
           opacity: loaded ? 1 : 0,
@@ -32,10 +32,7 @@ export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
       {/* 底部轻微压暗，保证 Dock 与文字可读性 */}
       <div className="absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-black/20 to-transparent" />
       {/* 聚焦时的全局柔光叠加 */}
-      <div
-        className="absolute inset-0 backdrop-blur-[1px] transition-opacity duration-[620ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[opacity]"
-        style={{ opacity: blurred ? 1 : 0, pointerEvents: "none" }}
-      />
+      <div className="absolute inset-0 backdrop-blur-[1px] transition-opacity duration-[620ms] ease-[var(--spring)]" style={{ opacity: blurred ? 1 : 0, pointerEvents: "none" }} />
     </div>
   );
 }

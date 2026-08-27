@@ -18,19 +18,24 @@ export function DockBar({ isGridOpen, onToggleGrid }: { isGridOpen: boolean; onT
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
         aria-label="快捷方式 Dock 栏"
-        className="pointer-events-auto flex max-w-[calc(100vw-16px)] items-center gap-2 overflow-x-auto rounded-[18px] glass-dock p-2 [-ms-overflow-style:none] [scrollbar-width:none] md:gap-2.5 md:overflow-visible [&::-webkit-scrollbar]:hidden"
+        className="pointer-events-auto flex max-w-[calc(100vw-16px)] items-center gap-2 overflow-x-auto overflow-y-visible rounded-[18px] glass-dock p-2 [-ms-overflow-style:none] [scrollbar-width:none] md:gap-2.5 md:overflow-visible [&::-webkit-scrollbar]:hidden"
       >
         {/* 全部菜单按钮（最左） */}
-        <button
-          type="button"
-          aria-label={isGridOpen ? "返回首页" : "打开全部"}
-          aria-haspopup="dialog"
-          aria-expanded={isGridOpen}
-          onClick={onToggleGrid}
-          className={`flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm transition-all active:scale-[0.95] ${isGridOpen ? "bg-white text-zinc-900 hover:bg-zinc-100" : "bg-zinc-900 text-white hover:bg-zinc-700"}`}
-        >
-          <SquaresFourIcon weight="bold" className="size-5" aria-hidden />
-        </button>
+        <div className="group/dock relative flex shrink-0">
+          <button
+            type="button"
+            aria-label={isGridOpen ? "返回首页" : "打开全部"}
+            aria-haspopup="dialog"
+            aria-expanded={isGridOpen}
+            onClick={onToggleGrid}
+            className={`flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm transition-all active:scale-[0.95] ${isGridOpen ? "bg-white text-zinc-900 hover:bg-zinc-100" : "bg-zinc-900 text-white hover:bg-zinc-700"}`}
+          >
+            <SquaresFourIcon weight="bold" className="size-5" aria-hidden />
+          </button>
+          <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all duration-200 group-hover/dock:translate-y-0 translate-y-1 group-hover/dock:opacity-100">
+            {isGridOpen ? "返回首页" : "全部"}
+          </div>
+        </div>
 
         <span className="mx-0.5 h-6 w-px shrink-0 bg-zinc-900/10" aria-hidden />
 
@@ -64,38 +69,42 @@ function DockIcon({
   const favicon = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : null;
 
   return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      title={name}
-      aria-label={`${name}，在新标签页打开`}
-      className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95]"
-    >
-      {favicon ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={favicon}
-          alt=""
-          width={20}
-          height={20}
-          loading="lazy"
-          className="size-[20px] rounded object-contain"
-          onError={(e) => {
-            const t = e.target as HTMLImageElement;
-            t.style.display = "none";
-            const sib = t.nextElementSibling as HTMLElement | null;
-            if (sib) sib.style.display = "flex";
-          }}
-        />
-      ) : null}
-      <span
-        style={{ display: favicon ? "none" : "flex", background: color ?? "#18181b" }}
-        className="hidden size-7 items-center justify-center rounded-lg text-xs font-bold text-white"
-        aria-hidden
+    <div className="group/dock relative flex shrink-0">
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={`${name}，在新标签页打开`}
+        className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95]"
       >
-        {name.charAt(0)}
-      </span>
-    </a>
+        {favicon ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={favicon}
+            alt=""
+            width={20}
+            height={20}
+            loading="lazy"
+            className="size-[20px] rounded object-contain"
+            onError={(e) => {
+              const t = e.target as HTMLImageElement;
+              t.style.display = "none";
+              const sib = t.nextElementSibling as HTMLElement | null;
+              if (sib) sib.style.display = "flex";
+            }}
+          />
+        ) : null}
+        <span
+          style={{ display: favicon ? "none" : "flex", background: color ?? "#18181b" }}
+          className="hidden size-7 items-center justify-center rounded-lg text-xs font-bold text-white"
+          aria-hidden
+        >
+          {name.charAt(0)}
+        </span>
+      </a>
+      <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all duration-200 group-hover/dock:translate-y-0 translate-y-1 group-hover/dock:opacity-100">
+        {name}
+      </div>
+    </div>
   );
 }
