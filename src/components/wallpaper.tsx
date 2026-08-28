@@ -31,8 +31,8 @@ export function setWallpaper(v: WallpaperValue) {
 export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
   const [url, setUrl] = useState(DEFAULT_WALLPAPER);
   const [loaded, setLoaded] = useState(false);
-  const [brightness, setBrightness] = useState(100);
-  const [blur, setBlur] = useState(0);
+  const [brightness, setBrightness] = useState(90);
+  const [blur, setBlur] = useState(100);
 
   useEffect(() => {
     const apply = () => {
@@ -46,12 +46,23 @@ export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
     const applyBrightness = () => {
       const v = Number(localStorage.getItem("startpage:wallpaperBrightness"));
       if (Number.isFinite(v) && v !== 0) setBrightness(Math.min(120, Math.max(70, v)));
-      else setBrightness(100);
+      else setBrightness(90);
     };
     const applyBlur = () => {
-      const v = Number(localStorage.getItem("startpage:wallpaperBlur"));
-      if (Number.isFinite(v)) setBlur(v);
-      else setBlur(0);
+      const raw = localStorage.getItem("startpage:wallpaperBlur");
+      if (raw === null) {
+        setBlur(100);
+        return;
+      }
+      const v = Number(raw);
+      // 旧默认 0 迁移至 100
+      if (!Number.isFinite(v) || v === 0) {
+        setBlur(100);
+        // 同步回写，避免下次仍为 0
+        localStorage.setItem("startpage:wallpaperBlur", "100");
+        return;
+      }
+      setBlur(Math.min(100, Math.max(0, v)));
     };
     apply();
     applyBrightness();

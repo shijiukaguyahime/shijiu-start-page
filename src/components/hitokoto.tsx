@@ -129,7 +129,7 @@ export function Hitokoto() {
                       e.preventDefault();
                       e.stopPropagation();
                     }}
-                    className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-900/5"
+                    className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100"
                   >
                     <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/70 text-zinc-600 shadow-sm ring-1 ring-black/5">
                       <CopyIcon weight="bold" className="size-3.5" aria-hidden />
@@ -146,7 +146,7 @@ export function Hitokoto() {
                       e.preventDefault();
                       e.stopPropagation();
                     }}
-                    className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-900/5"
+                    className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100"
                   >
                     <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/70 text-zinc-600 shadow-sm ring-1 ring-black/5">
                       <MagnifyingGlassIcon weight="bold" className="size-3.5" aria-hidden />

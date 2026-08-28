@@ -70,26 +70,30 @@ export default function Home() {
     const resolved = !theme || theme === "system" ? (mql.matches ? "dark" : "light") : theme;
     document.documentElement.setAttribute("data-theme", resolved);
     const isDark = resolved === "dark";
-    const glass = localStorage.getItem("startpage:glassOpacity");
-    if (glass) {
-      const v = Number(glass);
-      if (Number.isFinite(v)) {
-        const base = isDark ? "30,30,30" : "255,255,255";
-        const baseFocus = isDark ? "40,40,40" : "255,255,255";
-        document.documentElement.style.setProperty("--glass-bg", `rgba(${base},${v / 100})`);
-        document.documentElement.style.setProperty("--glass-bg-focus", `rgba(${baseFocus},${Math.min(0.72, v / 100 + 0.16).toFixed(2)})`);
-        document.documentElement.style.setProperty("--glass-border", isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.5)");
-      }
+    const glassRaw = localStorage.getItem("startpage:glassOpacity");
+    let glassVal: number;
+    if (glassRaw === null) glassVal = 40;
+    else {
+      const v = Number(glassRaw);
+      glassVal = !Number.isFinite(v) ? 40 : Math.min(80, Math.max(0, v));
+      if (!Number.isFinite(v) || v > 80 || v < 0) localStorage.setItem("startpage:glassOpacity", String(glassVal));
+    }
+    {
+      const v = glassVal;
+      const base = isDark ? "30,30,30" : "255,255,255";
+      const baseFocus = isDark ? "40,40,40" : "255,255,255";
+      document.documentElement.style.setProperty("--glass-bg", `rgba(${base},${v / 100})`);
+      document.documentElement.style.setProperty("--glass-bg-focus", `rgba(${baseFocus},${Math.min(0.72, v / 100 + 0.16).toFixed(2)})`);
+      document.documentElement.style.setProperty("--glass-border", isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.5)");
     }
     const bright = localStorage.getItem("startpage:wallpaperBrightness");
     if (bright) {
       const v = Number(bright);
-      // 0 视为异常旧值，回退 100
-      const norm = !Number.isFinite(v) || v === 0 ? 100 : Math.min(120, Math.max(70, v));
+      const norm = !Number.isFinite(v) || v === 0 ? 90 : Math.min(120, Math.max(70, v));
       document.documentElement.style.setProperty("--wallpaper-brightness", String(norm / 100));
       if (v === 0 || v !== norm) localStorage.setItem("startpage:wallpaperBrightness", String(norm));
     } else {
-      document.documentElement.style.setProperty("--wallpaper-brightness", "1");
+      document.documentElement.style.setProperty("--wallpaper-brightness", "0.9");
     }
   }, []);
 

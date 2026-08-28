@@ -6,10 +6,10 @@
   --background: #e4e4e7;
   --foreground: #18181b;
   --spring: cubic-bezier(0.22, 1, 0.36, 1);
-  --glass-bg: rgba(255, 255, 255, 0.56);
-  --glass-bg-focus: rgba(255, 255, 255, 0.72);
+  --glass-bg: rgba(255, 255, 255, 0.4);
+  --glass-bg-focus: rgba(255, 255, 255, 0.56);
   --glass-border: rgba(255, 255, 255, 0.5);
-  --wallpaper-brightness: 1;
+  --wallpaper-brightness: 0.9;
   /* 主题化设计令牌：亮色基准 */
   --surface: #ffffff;
   --surface-muted: #f4f4f5;
@@ -36,8 +36,8 @@
 [data-theme="dark"] {
   --background: #0a0a0a;
   --foreground: #fafafa;
-  --glass-bg: rgba(30, 30, 30, 0.55);
-  --glass-bg-focus: rgba(40, 40, 40, 0.7);
+  --glass-bg: rgba(30, 30, 30, 0.4);
+  --glass-bg-focus: rgba(40, 40, 40, 0.56);
   --glass-border: rgba(255, 255, 255, 0.08);
   --surface: #27272a;
   --surface-muted: #3f3f46;
@@ -65,8 +65,8 @@
   :root:not([data-theme]) {
     --background: #0a0a0a;
     --foreground: #fafafa;
-    --glass-bg: rgba(30, 30, 30, 0.55);
-    --glass-bg-focus: rgba(40, 40, 40, 0.7);
+    --glass-bg: rgba(30, 30, 30, 0.4);
+    --glass-bg-focus: rgba(40, 40, 40, 0.56);
     --glass-border: rgba(255, 255, 255, 0.08);
     --surface: #27272a;
     --surface-muted: #3f3f46;
@@ -113,8 +113,6 @@ body {
 }
 
 /* 玻璃拟态公共基底：仅保留差异化小的公共声明，差异由各变体覆盖 */
-.glass-search,
-.glass-dock,
 .glass-panel,
 .dropdown-panel {
   border: 1px solid var(--glass-border);
@@ -123,8 +121,15 @@ body {
   isolation: isolate;
   contain: layout paint style;
 }
+.glass-search,
+.glass-dock {
+  border: 1px solid var(--glass-border);
+  /* 输入框/Dock 需 backdrop-filter 穿透，不使用 contain:paint/isolate 避免截断模糊 */
+  will-change: backdrop-filter, transform;
+  transform: translateZ(0);
+}
 
-/* 搜索框与 Dock：同透明度，同质感，统一设计语言 */
+/* 搜索框与 Dock：同透明度，统一设计语言（模糊固定 20px，恢复默认） */
 .glass-search,
 .glass-dock {
   background: var(--glass-bg);
@@ -191,19 +196,19 @@ body {
 [data-theme="dark"] .glass-search {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 8px 28px rgba(0, 0, 0, 0.4);
+    0 8px 24px rgba(0, 0, 0, 0.18);
 }
 [data-theme="dark"] .glass-search:focus-within,
 [data-theme="dark"] .glass-search--focused {
   background: var(--glass-bg-focus);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 12px 36px rgba(0, 0, 0, 0.5);
+    0 12px 32px rgba(0, 0, 0, 0.22);
 }
 [data-theme="dark"] .glass-dock {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 10px 32px rgba(0, 0, 0, 0.4);
+    0 10px 28px rgba(0, 0, 0, 0.18);
 }
 
 /* ========================================================
@@ -389,7 +394,7 @@ input[type="range"].accent-zinc-900 {
   color-scheme: dark;
 }
 [data-theme="dark"] input::placeholder {
-  color: #71717a !important;
+  color: rgba(255, 255, 255, 0.72) !important;
 }
 [data-theme="dark"] input {
   color: var(--text-primary);
@@ -401,7 +406,12 @@ input[type="range"].accent-zinc-900 {
   color: var(--text-faint) !important;
 }
 [data-theme="dark"] .placeholder\:text-zinc-400::placeholder {
-  color: var(--text-faint) !important;
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+/* 搜索框占位在暗色下提亮至柔和白，保证与半透玻璃对比度但不过曝 */
+[data-theme="dark"] .glass-search input::placeholder,
+[data-theme="dark"] [data-search] input::placeholder {
+  color: rgba(255, 255, 255, 0.78) !important;
 }
 [data-theme="dark"] .accent-zinc-900 {
   accent-color: var(--accent) !important;

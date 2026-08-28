@@ -203,21 +203,27 @@ function AppearancePane() {
     return (localStorage.getItem("startpage:theme") as never) || "system";
   });
   const [glass, setGlass] = useState<number>(() => {
-    if (typeof window === "undefined") return 56;
-    const v = Number(localStorage.getItem("startpage:glassOpacity"));
-    return Number.isFinite(v) ? v : 56;
+    if (typeof window === "undefined") return 40;
+    const raw = localStorage.getItem("startpage:glassOpacity");
+    if (raw === null) return 40;
+    const v = Number(raw);
+    if (!Number.isFinite(v)) return 40;
+    return Math.min(80, Math.max(0, v));
   });
   const [brightness, setBrightness] = useState<number>(() => {
-    if (typeof window === "undefined") return 100;
+    if (typeof window === "undefined") return 90;
     const v = Number(localStorage.getItem("startpage:wallpaperBrightness"));
-    // 迁移：0 为旧默认/异常值，统一回 100（亮度 100%）
-    if (!Number.isFinite(v) || v === 0) return 100;
+    if (!Number.isFinite(v) || v === 0) return 90;
     return Math.min(120, Math.max(70, v));
   });
   const [blur, setBlur] = useState<number>(() => {
-    if (typeof window === "undefined") return 0;
-    const v = Number(localStorage.getItem("startpage:wallpaperBlur"));
-    return Number.isFinite(v) ? v : 0;
+    if (typeof window === "undefined") return 100;
+    const raw = localStorage.getItem("startpage:wallpaperBlur");
+    if (raw === null) return 100;
+    const v = Number(raw);
+    // 旧默认 0 迁移至 100
+    if (!Number.isFinite(v) || v === 0) return 100;
+    return Math.min(100, Math.max(0, v));
   });
 
   useEffect(() => {
@@ -228,7 +234,13 @@ function AppearancePane() {
     root.setAttribute("data-theme", resolved2);
     window.dispatchEvent(new Event("theme-change"));
     // 同步刷新毛玻璃基色以立即适配深浅
-    const glassVal = Number(localStorage.getItem("startpage:glassOpacity") || 56);
+    const glassRaw2 = localStorage.getItem("startpage:glassOpacity");
+    let glassVal: number;
+    if (glassRaw2 === null) glassVal = 40;
+    else {
+      const vv = Number(glassRaw2);
+      glassVal = !Number.isFinite(vv) || vv === 0 ? 40 : Math.min(80, Math.max(0, vv));
+    }
     const isDarkNow = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
     const base = isDarkNow ? "30,30,30" : "255,255,255";
     const baseFocus = isDarkNow ? "40,40,40" : "255,255,255";
@@ -301,10 +313,19 @@ function AppearancePane() {
         <div className="flex items-center gap-3">
           <input
             type="range"
-            min={30}
+            min={0}
             max={80}
             value={glass}
-            onChange={(e) => setGlass(Number(e.target.value))}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              setGlass(v);
+              localStorage.setItem("startpage:glassOpacity", String(v));
+              const isDarkNow = document.documentElement.getAttribute("data-theme") === "dark";
+              const base = isDarkNow ? "30,30,30" : "255,255,255";
+              const baseFocus = isDarkNow ? "40,40,40" : "255,255,255";
+              document.documentElement.style.setProperty("--glass-bg", `rgba(${base},${v / 100})`);
+              document.documentElement.style.setProperty("--glass-bg-focus", `rgba(${baseFocus},${Math.min(0.72, v / 100 + 0.16).toFixed(2)})`);
+            }}
             className="flex-1"
             style={{ accentColor: "var(--accent)" }}
           />
@@ -318,21 +339,32 @@ function AppearancePane() {
             min={70}
             max={120}
             value={brightness}
-            onChange={(e) => setBrightness(Number(e.target.value))}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              setBrightness(v);
+              localStorage.setItem("startpage:wallpaperBrightness", String(v));
+              document.documentElement.style.setProperty("--wallpaper-brightness", String(v / 100));
+              window.dispatchEvent(new Event("wallpaper-brightness-change"));
+            }}
             className="flex-1"
             style={{ accentColor: "var(--accent)" }}
           />
           <span className="w-10 shrink-0 text-right text-xs font-medium text-zinc-600 dark:text-zinc-400">{brightness}%</span>
         </div>
       </Section>
-      <Section title="壁纸模糊">
+      <Section title="遮罩模糊" desc="聚焦搜索或打开宫格时的额外模糊">
         <div className="flex items-center gap-3">
           <input
             type="range"
             min={0}
             max={100}
             value={blur}
-            onChange={(e) => setBlur(Number(e.target.value))}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              setBlur(v);
+              localStorage.setItem("startpage:wallpaperBlur", String(v));
+              window.dispatchEvent(new Event("wallpaper-blur-change"));
+            }}
             className="flex-1"
             style={{ accentColor: "var(--accent)" }}
           />
@@ -872,7 +904,7 @@ function IconsPane() {
 function DataPane() {
   const exportJson = () => {
     const payload: Record<string, unknown> = { at: new Date().toISOString(), version: 1 };
-    const keys = ["startpage:wallpaper", "startpage:items", "startpage:groups", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness"];
+    const keys = ["startpage:wallpaper", "startpage:items", "startpage:groups", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness", "startpage:wallpaperBlur"];
     for (const k of keys) {
       const v = localStorage.getItem(k);
       if (v !== null) {
@@ -903,13 +935,15 @@ function DataPane() {
       try {
         const j = JSON.parse(String(reader.result)) as Record<string, unknown>;
         if (j["startpage:wallpaper"] !== undefined || j["startpage:items"] !== undefined) {
-          for (const k of ["startpage:wallpaper", "startpage:items", "startpage:groups", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme"]) {
+          for (const k of ["startpage:wallpaper", "startpage:items", "startpage:groups", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness", "startpage:wallpaperBlur"]) {
             if (j[k] !== undefined) {
               const v = j[k];
               localStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v));
             }
           }
           window.dispatchEvent(new Event("wallpaper-change"));
+          window.dispatchEvent(new Event("wallpaper-brightness-change"));
+          window.dispatchEvent(new Event("wallpaper-blur-change"));
           window.dispatchEvent(new Event("search-history-change"));
           window.dispatchEvent(new Event("engine-change"));
           window.dispatchEvent(new Event("groups-change"));
@@ -947,9 +981,12 @@ function DataPane() {
           type="button"
           onClick={() => {
             if (confirm("确定恢复默认？此操作将清空本地数据并刷新。")) {
-              for (const k of ["startpage:groups", "startpage:items", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:wallpaper", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness"]) {
+              for (const k of ["startpage:groups", "startpage:items", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:wallpaper", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness", "startpage:wallpaperBlur"]) {
                 localStorage.removeItem(k);
               }
+              // 清理已废弃的玻璃模糊与 baseBlur 键
+              localStorage.removeItem("startpage:glassBlur");
+              localStorage.removeItem("startpage:wallpaperBaseBlur");
               location.reload();
             }
           }}

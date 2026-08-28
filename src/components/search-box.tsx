@@ -242,7 +242,7 @@ export function SearchBox({ onFocusChange }: Props) {
           aria-label="搜索关键词或网址"
           autoComplete="off"
           spellCheck={false}
-          className="h-9 min-w-0 flex-1 bg-transparent px-2 text-[15px] font-medium text-zinc-800 placeholder:text-zinc-400 focus:outline-none dark:text-zinc-100 dark:placeholder:text-white/70"
+          className="h-9 min-w-0 flex-1 bg-transparent px-2 text-[15px] font-medium text-zinc-800 placeholder:text-zinc-400 focus:outline-none dark:text-white dark:placeholder:text-white"
         />
 
         <button
@@ -303,7 +303,9 @@ export function SearchBox({ onFocusChange }: Props) {
                   }}
                   className={cn(
                     "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium transition-colors",
-                    eng.id === engine.id ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-900/5",
+                    eng.id === engine.id
+                      ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+                      : "text-zinc-700 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100",
                   )}
                 >
                   <span
@@ -342,7 +344,7 @@ export function SearchBox({ onFocusChange }: Props) {
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={clearAllHistory}
-                className="rounded-full px-2 py-0.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-700"
+                className="rounded-full px-2 py-0.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-200"
               >
                 清空
               </button>
@@ -354,7 +356,7 @@ export function SearchBox({ onFocusChange }: Props) {
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => pickHistory(q)}
-                    className="group flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-900/5"
+                    className="group flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100"
                   >
                     <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/70 text-zinc-500 shadow-sm ring-1 ring-black/5">
                       <ClockIcon weight="regular" className="size-4" aria-hidden />
