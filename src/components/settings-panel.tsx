@@ -5,6 +5,7 @@ import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
   XIcon,
   PaletteIcon,
+  GearIcon,
   ImageIcon,
   MagnifyingGlassIcon,
   SquaresFourIcon,
@@ -17,7 +18,18 @@ import {
   CaretDownIcon,
   PencilSimpleIcon,
 } from "@phosphor-icons/react";
-import { BING_WALLPAPER, getWallpaper, setWallpaper, type WallpaperValue } from "@/components/wallpaper";
+import {
+  BING_WALLPAPER,
+  NATURE_WALLPAPER,
+  getWallpaper,
+  setWallpaper,
+  getWallpaperHistory,
+  removeWallpaperHistory,
+  clearWallpaperHistory,
+  fetchBingConcreteUrl,
+  fetchNatureConcreteUrl,
+} from "@/components/wallpaper";
+import type { WallpaperValue } from "@/components/wallpaper";
 import { DEFAULT_GROUPS, SEARCH_ENGINES, type Group, type SearchEngine } from "@/lib/data";
 
 type TabId = "appearance" | "wallpaper" | "search" | "grid" | "data" | "about";
@@ -93,7 +105,7 @@ export function SettingsPanel({ open, onClose, initialTab = "appearance", onTabC
             <div className="hidden max-md:flex items-center justify-between border-b border-zinc-900/5 bg-white/40 px-4 py-3 backdrop-blur dark:border-white/10 dark:bg-zinc-800/50">
               <div className="flex items-center gap-2">
                 <div className="flex size-7 items-center justify-center rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
-                  <PaletteIcon weight="bold" className="size-3.5" />
+                  <GearIcon weight="bold" className="size-3.5" />
                 </div>
                 <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">设置</span>
               </div>
@@ -120,7 +132,7 @@ export function SettingsPanel({ open, onClose, initialTab = "appearance", onTabC
             <aside className="flex w-full shrink-0 flex-col border-zinc-900/5 bg-white/30 backdrop-blur dark:border-white/10 dark:bg-zinc-900/20 md:w-[220px] md:border-r max-md:border-b-0 max-md:py-0">
               <div className="hidden items-center gap-2 px-4 pb-3 pt-4 md:flex">
                 <div className="flex size-8 items-center justify-center rounded-xl bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
-                  <PaletteIcon weight="bold" className="size-4" />
+                  <GearIcon weight="bold" className="size-4" />
                 </div>
                 <span className="text-sm font-semibold tracking-wide text-zinc-700 dark:text-zinc-200">设置</span>
               </div>
@@ -154,7 +166,7 @@ export function SettingsPanel({ open, onClose, initialTab = "appearance", onTabC
                 </h2>
                 <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                   {active === "appearance" && "主题与毛玻璃效果"}
-                  {active === "wallpaper" && "默认 / 必应每日 / 列表 / 自定义上传"}
+                  {active === "wallpaper" && "图片来源于网络"}
                   {active === "search" && "搜索引擎与历史记录"}
                   {active === "grid" && "按分组管理图标"}
                   {active === "data" && "本地 JSON 同步"}
@@ -377,21 +389,54 @@ function AppearancePane() {
 
 function WallpaperPane() {
   const [curr, setCurr] = useState<WallpaperValue>(() => getWallpaper());
+  const [history, setHistory] = useState<string[]>(() => getWallpaperHistory());
 
   useEffect(() => {
     setCurr(getWallpaper());
+    setHistory(getWallpaperHistory());
     const onChange = () => setCurr(getWallpaper());
+    const onHistory = () => setHistory(getWallpaperHistory());
     window.addEventListener("wallpaper-change", onChange);
-    return () => window.removeEventListener("wallpaper-change", onChange);
+    window.addEventListener("wallpaper-history-change", onHistory);
+    window.addEventListener("storage", onHistory);
+    return () => {
+      window.removeEventListener("wallpaper-change", onChange);
+      window.removeEventListener("wallpaper-history-change", onHistory);
+      window.removeEventListener("storage", onHistory);
+    };
   }, []);
 
-  const pick = (type: WallpaperValue["type"]) => {
+  const [picking, setPicking] = useState<WallpaperValue["type"] | null>(null);
+
+  const pick = async (type: WallpaperValue["type"]) => {
+    if (type === "bing") {
+      setPicking("bing");
+      const concrete = await fetchBingConcreteUrl();
+      const url = concrete || BING_WALLPAPER;
+      const v: WallpaperValue = { type, url };
+      setWallpaper(v);
+      setCurr(v);
+      setPicking(null);
+      return;
+    }
+    if (type === "nature") {
+      setPicking("nature");
+      const concrete = await fetchNatureConcreteUrl();
+      const url = concrete || `${NATURE_WALLPAPER}&_t=${Date.now()}`;
+      const v: WallpaperValue = { type, url };
+      setWallpaper(v);
+      setCurr(v);
+      setPicking(null);
+      return;
+    }
     const map: Record<string, string> = {
       default: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?q=80&w=2400&auto=format&fit=crop",
       unsplash: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?q=80&w=2400&auto=format&fit=crop",
       bing: BING_WALLPAPER,
+      nature: NATURE_WALLPAPER,
     };
-    const v: WallpaperValue = { type, url: map[type] };
+    const url = map[type];
+    const v: WallpaperValue = { type, url };
     setWallpaper(v);
     setCurr(v);
   };
@@ -410,7 +455,7 @@ function WallpaperPane() {
     const idxs = Array.from({ length: 12 }, (_, i) => page * 12 + i);
     Promise.all(
       idxs.map((idx) =>
-        fetch(`https://bing.biturl.top/?resolution=1920&format=json&index=${idx}&mkt=zh-CN`)
+        fetch(`https://bing.biturl.top/?resolution=UHD&format=json&index=${idx}&mkt=zh-CN`)
           .then((r) => r.json())
           .then((j) => (j.url as string) || null)
           .catch(() => null),
@@ -468,19 +513,22 @@ function WallpaperPane() {
         <div className="grid grid-cols-2 gap-3">
           {[
             { id: "default", label: "默认", sub: "Unsplash" },
-            { id: "bing", label: "Bing 每日", sub: "每日更新" },
+            { id: "bing", label: "Bing 每日", sub: "4K · 每日更新" },
+            { id: "nature", label: "随机风景", sub: "Nature" },
           ].map((o) => (
             <button
               key={o.id}
               type="button"
-              onClick={() => pick(o.id as never)}
-              className={`group relative overflow-hidden rounded-xl border p-3 text-left transition-all ${
+              onClick={() => void pick(o.id as WallpaperValue["type"])}
+              disabled={picking !== null}
+              className={`group relative overflow-hidden rounded-xl border p-3 text-left transition-all disabled:opacity-60 ${
                 isActive(o.id) ? "border-zinc-900 bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow" : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700"
               }`}
             >
               <div className={`text-sm font-medium ${isActive(o.id) ? "text-white dark:text-zinc-900" : "text-zinc-800 dark:text-zinc-100"}`}>{o.label}</div>
-              <div className={`text-xs ${isActive(o.id) ? "text-white/70 dark:text-zinc-600" : "text-zinc-500 dark:text-zinc-400"}`}>{o.sub}</div>
-              {isActive(o.id) && <CheckIcon weight="bold" className="absolute right-2 top-2 size-4 text-white dark:text-zinc-900" />}
+              <div className={`text-xs ${isActive(o.id) ? "text-white/70 dark:text-zinc-600" : "text-zinc-500 dark:text-zinc-400"}`}>{picking === o.id ? "加载中..." : o.sub}</div>
+              {isActive(o.id) && picking !== o.id && <CheckIcon weight="bold" className="absolute right-2 top-2 size-4 text-white dark:text-zinc-900" />}
+              {picking === o.id && <span className="absolute right-2 top-2 size-4 animate-spin rounded-full border-2 border-white/30 border-t-white dark:border-zinc-900/20 dark:border-t-zinc-900" />}
             </button>
           ))}
         </div>
@@ -531,6 +579,65 @@ function WallpaperPane() {
           {!bingLoading && !hasMore && bingList.length > 0 && <p className="mt-2 text-center text-xs text-zinc-400 dark:text-zinc-500">已加载全部</p>}
           {!bingLoading && !bingList.length && <p className="text-xs text-zinc-500 dark:text-zinc-400">加载失败，请稍后重试。</p>}
         </div>
+      </Section>
+
+      <Section title="壁纸历史" desc={history.length ? `已保存 ${history.length} / 30 张（去重）` : "暂无历史"}>
+        {history.length ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {history.map((url) => {
+                const active = curr.url === url;
+                const inferredType: WallpaperValue["type"] = url.includes("wp.upx8.com") ? "nature" : url.includes("bing.biturl.top") || url.includes("bing.com") ? "bing" : "default";
+                return (
+                  <div key={url} className="group/history relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const v: WallpaperValue = { type: inferredType, url };
+                        setWallpaper(v);
+                        setCurr(v);
+                      }}
+                      className={`relative flex aspect-[16/10] w-full overflow-hidden rounded-xl border-2 bg-zinc-100 transition-all dark:bg-zinc-800 ${active ? "border-zinc-900 dark:border-white" : "border-transparent hover:border-zinc-300 dark:hover:border-zinc-600"}`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={url} alt="历史壁纸" className="h-full w-full object-cover" loading="lazy" />
+                      {active && (
+                        <span className="absolute left-1 top-1 flex size-5 items-center justify-center rounded-full bg-zinc-900 text-white shadow dark:bg-white dark:text-zinc-900">
+                          <CheckIcon weight="bold" className="size-3" />
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="删除该历史"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeWallpaperHistory(url);
+                      }}
+                      className="absolute -right-1 -top-1 flex size-6 items-center justify-center rounded-full bg-white text-zinc-500 shadow-md ring-1 ring-black/5 transition-all hover:bg-red-50 hover:text-red-600 group-hover/history:opacity-100 dark:bg-zinc-700 dark:text-zinc-300 dark:ring-white/10 dark:hover:bg-red-500/20 dark:hover:text-red-400 max-sm:opacity-100 sm:opacity-0"
+                    >
+                      <XIcon weight="bold" className="size-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm("确定清空壁纸历史？")) clearWallpaperHistory();
+                }}
+                className="text-xs font-medium text-zinc-500 hover:text-red-600 dark:text-zinc-400 dark:hover:text-red-400"
+              >
+                清空历史
+              </button>
+              <span className="text-xs text-zinc-400 dark:text-zinc-500">点击缩略图设为壁纸</span>
+            </div>
+          </div>
+        ) : (
+          <p className="py-4 text-center text-xs text-zinc-500 dark:text-zinc-400">暂无历史，设置壁纸后自动记录（去重，最多 30 张）</p>
+        )}
       </Section>
     </div>
   );
@@ -904,7 +1011,7 @@ function IconsPane() {
 function DataPane() {
   const exportJson = () => {
     const payload: Record<string, unknown> = { at: new Date().toISOString(), version: 1 };
-    const keys = ["startpage:wallpaper", "startpage:items", "startpage:groups", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness", "startpage:wallpaperBlur"];
+    const keys = ["startpage:wallpaper", "startpage:wallpaperHistory", "startpage:items", "startpage:groups", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness", "startpage:wallpaperBlur"];
     for (const k of keys) {
       const v = localStorage.getItem(k);
       if (v !== null) {
@@ -935,13 +1042,14 @@ function DataPane() {
       try {
         const j = JSON.parse(String(reader.result)) as Record<string, unknown>;
         if (j["startpage:wallpaper"] !== undefined || j["startpage:items"] !== undefined) {
-          for (const k of ["startpage:wallpaper", "startpage:items", "startpage:groups", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness", "startpage:wallpaperBlur"]) {
+          for (const k of ["startpage:wallpaper", "startpage:wallpaperHistory", "startpage:items", "startpage:groups", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness", "startpage:wallpaperBlur"]) {
             if (j[k] !== undefined) {
               const v = j[k];
               localStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v));
             }
           }
           window.dispatchEvent(new Event("wallpaper-change"));
+          window.dispatchEvent(new Event("wallpaper-history-change"));
           window.dispatchEvent(new Event("wallpaper-brightness-change"));
           window.dispatchEvent(new Event("wallpaper-blur-change"));
           window.dispatchEvent(new Event("search-history-change"));
@@ -981,7 +1089,7 @@ function DataPane() {
           type="button"
           onClick={() => {
             if (confirm("确定恢复默认？此操作将清空本地数据并刷新。")) {
-              for (const k of ["startpage:groups", "startpage:items", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:wallpaper", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness", "startpage:wallpaperBlur"]) {
+              for (const k of ["startpage:groups", "startpage:items", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:wallpaper", "startpage:wallpaperHistory", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness", "startpage:wallpaperBlur"]) {
                 localStorage.removeItem(k);
               }
               // 清理已废弃的玻璃模糊与 baseBlur 键
@@ -1001,11 +1109,95 @@ function DataPane() {
 
 function AboutPane() {
   return (
-    <div className="space-y-4">
-      <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">关于</h2>
-      <Section title="start-page" desc="Next.js 16 · React 19 · Tailwind · motion · 拟物玻璃">
-        <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">Dock 已去快捷化，改为 壁纸 / 组件 / 设置 入口，后续组件可按需扩展。</p>
-      </Section>
+    <div className="space-y-6">
+      {/* 项目介绍 */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent to-zinc-200 dark:to-zinc-700" />
+          <span className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-semibold tracking-wide text-white dark:bg-white dark:text-zinc-900">项目介绍</span>
+          <div className="h-px flex-1 bg-gradient-to-l from-transparent to-zinc-200 dark:to-zinc-700" />
+        </div>
+
+        <Section title="拾玖起始页 · shijiu-start-page" desc="一个纯前端、极简、本地优先的浏览器起始页">
+          <div className="space-y-3 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+            <p>
+              UI 与交互灵感来自
+              <a href="https://www.limestart.cn" target="_blank" rel="noopener noreferrer" className="mx-1 font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-700 dark:text-zinc-100 dark:decoration-zinc-600">青柠起始页</a>
+              与
+              <a href="https://nbtab.com" target="_blank" rel="noopener noreferrer" className="mx-1 font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-700 dark:text-zinc-100 dark:decoration-zinc-600">NBTab</a>
+              ，单页承载时间、搜索、一言、壁纸、宫格与 Dock，注重<span className="font-medium text-zinc-900 dark:text-zinc-100">留白、玻璃拟态与弹簧动效</span>，开箱即用，持续迭代中。
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {["Next.js 16.3", "React 19", "TypeScript strict", "Tailwind 3.4", "motion", "sortablejs", "phosphor-icons"].map((t) => (
+                <span key={t} className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                  {t}
+                </span>
+              ))}
+            </div>
+          </div>
+        </Section>
+
+        <Section title="设计与特性" desc="玻璃拟态 · 弹簧曲线 · 深浅自适应">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {[
+              { k: "视觉", v: "玻璃拟态 --glass-bg / --glass-blur，毛玻璃统一驱动搜索与 Dock" },
+              { k: "动效", v: "弹簧曲线 --spring (0.22,1,0.36,1) 贯穿 CSS 与 motion" },
+              { k: "壁纸", v: "默认 / Bing 每日 4K / 随机风景，去重历史 30 张" },
+              { k: "隐私", v: "零后端，全部 localStorage，支持 JSON 导出/导入" },
+            ].map((it) => (
+              <div key={it.k} className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/60">
+                <div className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">{it.k}</div>
+                <div className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{it.v}</div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      </div>
+
+      {/* 使用指南 */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent to-zinc-200 dark:to-zinc-700" />
+          <span className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-semibold tracking-wide text-white dark:bg-white dark:text-zinc-900">使用指南</span>
+          <div className="h-px flex-1 bg-gradient-to-l from-transparent to-zinc-200 dark:to-zinc-700" />
+        </div>
+
+        <Section title="基础交互" desc="右键进宫格 · 左键回首页 · Esc 关闭">
+          <ul className="space-y-1.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+            <li>• <span className="font-medium text-zinc-900 dark:text-zinc-100">右键</span>点击壁纸空白处进入宫格，<span className="font-medium text-zinc-900 dark:text-zinc-100">左键</span>点击壁纸空白处返回首页</li>
+            <li>• 宫格内点击图标新标签打开；支持分组切换与桌面拖拽排序</li>
+            <li>• 任何弹窗/宫格按 <span className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs dark:bg-zinc-800">Esc</span> 快速关闭</li>
+          </ul>
+        </Section>
+
+        <Section title="搜索与壁纸" desc="可深度自定义">
+          <ul className="space-y-1.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+            <li>• 搜索：聚焦显一言，可切换/新增/编辑搜索引擎，回车或点击搜索，输入 URL 直达</li>
+            <li>• 壁纸：精选默认、Bing 每日 4K、随机风景；历史自动记录（去重，上限 30），缩略图点击切换，右上角 × 删除</li>
+            <li>• 外观：主题（跟随系统/浅/深）、毛玻璃透明度 0-80、亮度 70-120、遮罩模糊 0-100</li>
+          </ul>
+        </Section>
+
+        <Section title="数据与声明" desc="本地优先 · 开源免费">
+          <ul className="space-y-1.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+            <li>• 本站不保存任何数据，所有数据仅存于浏览器 <span className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-xs dark:bg-zinc-800">localStorage</span>，无云同步；可在 <span className="font-medium text-zinc-900 dark:text-zinc-100">设置-数据</span> 导出 JSON 备份，换设备导入即可</li>
+            <li>• 壁纸均来源于网络，随机壁纸为 API 调用，本站不对壁纸内容负责</li>
+            <li className="flex flex-wrap items-center gap-1.5">
+              <span>• 开源地址：</span>
+              <a href="https://github.com/shijiukaguyahime/shijiu-start-page" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100 cursor-pointer">
+                GitHub · 点个 Star
+              </a>
+              <span>· 博客：</span>
+              <a href="https://shijiucode.cn" target="_blank" rel="noopener noreferrer" className="font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-700 dark:text-zinc-100 dark:decoration-zinc-600 cursor-pointer">shijiucode.cn</a>
+            </li>
+          </ul>
+        </Section>
+      </div>
+
+      <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/60 p-4 text-center dark:border-zinc-700 dark:bg-zinc-800/30">
+        <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300">开源 · 极简 · 本地优先</p>
+        <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">喜欢就点个 Star，持续迭代中 — 感谢使用拾玖起始页</p>
+      </div>
     </div>
   );
 }

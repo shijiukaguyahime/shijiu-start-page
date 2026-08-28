@@ -162,6 +162,66 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
     return () => window.removeEventListener("wheel", onWheel);
   }, [open, groups.length, onGroupChange]);
 
+  // 移动端：宫格区域左右滑动切换分组，上下滑动保持滚动
+  useEffect(() => {
+    if (!open) return;
+    const el = gridScrollRef.current;
+    if (!el) return;
+
+    let startX = 0;
+    let startY = 0;
+    let startTime = 0;
+    let isHorizontal: boolean | null = null;
+
+    const onTouchStart = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!t) return;
+      startX = t.clientX;
+      startY = t.clientY;
+      startTime = Date.now();
+      isHorizontal = null;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!t || isHorizontal === false) return;
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+      // 判定方向：首次移动时确定主方向
+      if (isHorizontal === null) {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        isHorizontal = Math.abs(dx) > Math.abs(dy);
+      }
+      // 横向滑动时阻止垂直滚动的误触，但不阻止纵向滚动
+      if (isHorizontal) {
+        if (Math.abs(dx) > 12) e.preventDefault();
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      const t = e.changedTouches[0];
+      if (!t) return;
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+      const dt = Date.now() - startTime;
+      // 阈值：横向位移 >40px 且横向主导 且时间 <600ms
+      if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) && dt < 600) {
+        if (dx < 0) onGroupChange((i) => (i + 1) % groups.length); // 左滑 → 下一组
+        else onGroupChange((i) => (i - 1 + groups.length) % groups.length); // 右滑 → 上一组
+      }
+      isHorizontal = null;
+    };
+
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [open, groups.length, onGroupChange]);
+
   if (!open) return null;
 
   return (
@@ -256,6 +316,7 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
 }
 
 function Favicon({ url, name, color }: { url?: string; name: string; color?: string }) {
+  const [failed, setFailed] = useState(false);
   const domain = (() => {
     try {
       return url ? new URL(url).hostname : "";
@@ -264,13 +325,13 @@ function Favicon({ url, name, color }: { url?: string; name: string; color?: str
     }
   })();
   const src = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : null;
-  if (src) {
+  if (src && !failed) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={src} alt="" width={22} height={22} className="size-[22px] object-contain" loading="lazy" />;
+    return <img src={src} alt="" width={22} height={22} className="size-[22px] object-contain" loading="lazy" onError={() => setFailed(true)} />;
   }
   return (
     <span className="flex size-7 items-center justify-center rounded-lg text-xs font-bold text-white" style={{ background: color ?? "#18181b" }}>
-      {name.charAt(0)}
+      {name.charAt(0).toUpperCase()}
     </span>
   );
 }
