@@ -4,7 +4,7 @@ import { useRef, useState, useEffect } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import Sortable from "sortablejs";
 import { CalendarBlankIcon, FireIcon } from "@phosphor-icons/react";
-import { DEFAULT_GROUPS, type Shortcut } from "@/lib/data";
+import { DEFAULT_GROUPS, type Group, type Shortcut } from "@/lib/data";
 
 type GridItem = Shortcut & {
   w?: 1 | 2;
@@ -24,18 +24,87 @@ type Props = {
   onGroupChange: React.Dispatch<React.SetStateAction<number>>;
 };
 
+const STORAGE_ITEMS = "startpage:items";
+
+function loadItems(): GridItem[] {
+  if (typeof window === "undefined") return buildItems();
+  try {
+    const raw = localStorage.getItem(STORAGE_ITEMS) || localStorage.getItem("startpage:groups");
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown;
+      // 支持两种导入：直接 GridItem[] 或 {groups: Group[]} 或 Group[]
+      if (Array.isArray(parsed) && parsed.length) {
+        // 若是 Group[]（含 shortcuts），展平为 GridItem[]
+        if ((parsed[0] as { shortcuts?: unknown })?.shortcuts) {
+          const groups = parsed as { shortcuts: GridItem[] }[];
+          return groups.flatMap((g) => g.shortcuts) as GridItem[];
+        }
+        return parsed as GridItem[];
+      }
+      if (parsed && typeof parsed === "object" && Array.isArray((parsed as { groups?: unknown }).groups)) {
+        const g = (parsed as { groups: { shortcuts: GridItem[] }[] }).groups;
+        return g.flatMap((x) => x.shortcuts) as GridItem[];
+      }
+    }
+  } catch {}
+  return buildItems();
+}
+
 export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
   const [items, setItems] = useState<GridItem[]>(() => buildItems());
+  const [groupsData, setGroupsData] = useState<Group[]>(() => {
+    if (typeof window === "undefined") return DEFAULT_GROUPS;
+    try {
+      const raw = localStorage.getItem("startpage:groups");
+      if (raw) {
+        const parsed = JSON.parse(raw) as Group[];
+        if (Array.isArray(parsed) && parsed.length && parsed[0]?.shortcuts) return parsed;
+      }
+    } catch {}
+    return DEFAULT_GROUPS;
+  });
   const reduce = useReducedMotion();
   const gridRef = useRef<HTMLDivElement>(null);
   const gridScrollRef = useRef<HTMLDivElement>(null);
 
-  const groups = ["全部", ...DEFAULT_GROUPS.map((g) => g.title)];
+  useEffect(() => {
+    const loadGroups = () => {
+      try {
+        const raw = localStorage.getItem("startpage:groups");
+        if (raw) {
+          const parsed = JSON.parse(raw) as Group[];
+          if (Array.isArray(parsed) && parsed.length) setGroupsData(parsed);
+        }
+      } catch {}
+    };
+    loadGroups();
+    window.addEventListener("storage", loadGroups);
+    window.addEventListener("groups-change" as never, loadGroups);
+    return () => {
+      window.removeEventListener("storage", loadGroups);
+      window.removeEventListener("groups-change" as never, loadGroups);
+    };
+  }, []);
+
+  // 首次挂载从 localStorage 恢复拖拽后的顺序
+  useEffect(() => {
+    setItems(loadItems());
+  }, []);
+
+  // 拖拽后落盘，支撑 JSON 导出与刷新保持
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_ITEMS, JSON.stringify(items));
+    } catch {}
+  }, [items]);
+
+  const groups = ["全部", ...groupsData.map((g) => g.title)];
   const filtered =
     groupIdx === 0
       ? items
       : items.filter((it) => {
-          const g = DEFAULT_GROUPS[groupIdx - 1];
+          const g = groupsData[groupIdx - 1];
+          if (!g) return false;
           return g.shortcuts.some((s) => s.id === it.id);
         });
   const displayItems = groupIdx === 0 ? filtered : filtered.filter((it) => !it.widget);
@@ -81,6 +150,7 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
     if (!open) return;
     function onWheel(e: WheelEvent) {
       const target = e.target as HTMLElement;
+      if (target.closest("[data-settings]")) return;
       if (gridScrollRef.current?.contains(target)) return;
       if (Math.abs(e.deltaX) < Math.abs(e.deltaY)) {
         if (e.deltaY > 8 || e.deltaY < -8) e.preventDefault();
@@ -171,10 +241,10 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
                   }
                   className={`${spanClass} group/app flex flex-col items-center justify-center gap-2 py-1 text-center gpu`}
                 >
-                  <span className="flex size-16 items-center justify-center rounded-2xl bg-white shadow-[0_2px_10px_rgba(0,0,0,0.12)] transition-[transform,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/app:shadow-md group-hover/app:scale-[1.02] md:size-16 gpu">
+                  <span className="flex size-16 items-center justify-center rounded-2xl bg-white shadow-[0_2px_10px_rgba(0,0,0,0.12)] transition-[transform,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/app:shadow-md group-hover/app:scale-[1.02] md:size-16 gpu dark:bg-zinc-800 dark:shadow-[0_2px_10px_rgba(0,0,0,0.3)]">
                     <Favicon url={item.url} name={item.name} color={item.color} />
                   </span>
-                  <span className="line-clamp-1 w-full truncate px-1 text-xs font-medium leading-tight text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.4)]">{item.name}</span>
+                  <span className="line-clamp-1 w-full truncate px-1 text-xs font-medium leading-tight text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.4)] dark:text-zinc-100">{item.name}</span>
                 </motion.a>
               );
             })}

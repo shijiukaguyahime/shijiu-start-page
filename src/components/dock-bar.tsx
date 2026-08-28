@@ -1,14 +1,22 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { SquaresFourIcon } from "@phosphor-icons/react";
-import { DOCK_SHORTCUTS } from "@/lib/data";
+import { SquaresFourIcon, ImageIcon, GearIcon, SunIcon, MoonIcon, MagnifyingGlassIcon, TranslateIcon } from "@phosphor-icons/react";
 
 /**
  * 底部 Dock：矩形圆角（外框与内部图标同一圆角体系），最左为"全部"菜单按钮
  * 点击触发宫格（与右键壁纸一致），事件已做冒泡隔离
  */
-export function DockBar({ isGridOpen, onToggleGrid }: { isGridOpen: boolean; onToggleGrid: () => void }) {
+export function DockBar({
+  isGridOpen,
+  onToggleGrid,
+  onOpenSettings,
+}: {
+  isGridOpen: boolean;
+  onToggleGrid: () => void;
+  onOpenSettings?: (tab?: string) => void;
+}) {
   const reduce = useReducedMotion();
 
   return (
@@ -20,30 +28,141 @@ export function DockBar({ isGridOpen, onToggleGrid }: { isGridOpen: boolean; onT
         aria-label="快捷方式 Dock 栏"
         className="pointer-events-auto flex max-w-[calc(100vw-16px)] items-center gap-2 overflow-x-auto overflow-y-visible rounded-[18px] glass-dock p-2 [-ms-overflow-style:none] [scrollbar-width:none] md:gap-2.5 md:overflow-visible [&::-webkit-scrollbar]:hidden"
       >
-        {/* 全部菜单按钮（最左） */}
+        {/* 图标（展开收起） */}
         <div className="group/dock relative flex shrink-0">
           <button
             type="button"
-            aria-label={isGridOpen ? "返回首页" : "打开全部"}
+            aria-label={isGridOpen ? "返回首页" : "图标"}
             aria-haspopup="dialog"
             aria-expanded={isGridOpen}
             onClick={onToggleGrid}
-            className={`flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm transition-all active:scale-[0.95] ${isGridOpen ? "bg-white text-zinc-900 hover:bg-zinc-100" : "bg-zinc-900 text-white hover:bg-zinc-700"}`}
+            className={`flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm transition-all active:scale-[0.95] ${isGridOpen ? "bg-white text-zinc-900 hover:bg-zinc-100 dark:bg-zinc-700 dark:text-white" : "bg-zinc-900 text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"}`}
           >
             <SquaresFourIcon weight="bold" className="size-5" aria-hidden />
           </button>
-          <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all duration-200 group-hover/dock:translate-y-0 translate-y-1 group-hover/dock:opacity-100">
-            {isGridOpen ? "返回首页" : "全部"}
+          <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all duration-200 group-hover/dock:translate-y-0 translate-y-1 group-hover/dock:opacity-100 dark:bg-white dark:text-zinc-900">
+            {isGridOpen ? "返回首页" : "图标"}
           </div>
         </div>
 
-        <span className="mx-0.5 h-6 w-px shrink-0 bg-zinc-900/10" aria-hidden />
+        <span className="mx-0.5 h-6 w-px shrink-0 bg-zinc-900/10 dark:bg-white/15" aria-hidden />
 
-        {/* 快捷图标 */}
-        {DOCK_SHORTCUTS.map((item) => (
-          <DockIcon key={item.id} id={item.id} name={item.name} url={item.url} color={item.color} />
-        ))}
+        {/* 翻译 */}
+        <div className="group/dock relative flex shrink-0">
+          <button
+            type="button"
+            aria-label="翻译"
+            onClick={() => window.open("https://fanyi.baidu.com", "_blank", "noopener")}
+            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
+          >
+            <span className="flex size-7 items-center justify-center rounded-full bg-white text-xs font-bold text-zinc-700 shadow-sm ring-1 ring-black/5 dark:bg-zinc-700 dark:text-zinc-200 dark:ring-white/10">译</span>
+          </button>
+          <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all duration-200 group-hover/dock:translate-y-0 translate-y-1 group-hover/dock:opacity-100 dark:bg-white dark:text-zinc-900">
+            翻译
+          </div>
+        </div>
+
+        {/* 相册 */}
+        <div className="group/dock relative flex shrink-0">
+          <button
+            type="button"
+            aria-label="相册"
+            onClick={() => onOpenSettings?.("wallpaper")}
+            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
+          >
+            <ImageIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" aria-hidden />
+          </button>
+          <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all duration-200 group-hover/dock:translate-y-0 translate-y-1 group-hover/dock:opacity-100 dark:bg-white dark:text-zinc-900">
+            相册
+          </div>
+        </div>
+
+        {/* 搜索 */}
+        <div className="group/dock relative flex shrink-0">
+          <button
+            type="button"
+            aria-label="搜索"
+            onClick={() => onOpenSettings?.("search")}
+            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
+          >
+            <MagnifyingGlassIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" aria-hidden />
+          </button>
+          <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all duration-200 group-hover/dock:translate-y-0 translate-y-1 group-hover/dock:opacity-100 dark:bg-white dark:text-zinc-900">
+            搜索
+          </div>
+        </div>
+
+        {/* 切换主题 */}
+        <ThemeToggle />
+
+        {/* 设置 */}
+        <div className="group/dock relative flex shrink-0">
+          <button
+            type="button"
+            aria-label="设置"
+            onClick={() => onOpenSettings?.("appearance")}
+            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
+          >
+            <GearIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" aria-hidden />
+          </button>
+          <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all duration-200 group-hover/dock:translate-y-0 translate-y-1 group-hover/dock:opacity-100 dark:bg-white dark:text-zinc-900">
+            设置
+          </div>
+        </div>
       </motion.nav>
+    </div>
+  );
+}
+
+function ThemeToggle() {
+  const [isDark, setIsDark] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    const get = () => {
+      const saved = localStorage.getItem("startpage:theme");
+      if (saved === "dark") return true;
+      if (saved === "light") return false;
+      return mql.matches;
+    };
+    setIsDark(get());
+    const onStorage = () => setIsDark(get());
+    const onMql = () => {
+      if (!localStorage.getItem("startpage:theme") || localStorage.getItem("startpage:theme") === "system") setIsDark(mql.matches);
+    };
+    window.addEventListener("storage", onStorage);
+    mql.addEventListener("change", onMql);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      mql.removeEventListener("change", onMql);
+    };
+  }, []);
+  const toggle = () => {
+    const nextDark = !isDark;
+    const next = nextDark ? "dark" : "light";
+    localStorage.setItem("startpage:theme", next);
+    document.documentElement.setAttribute("data-theme", next);
+    setIsDark(nextDark);
+    const glass = Number(localStorage.getItem("startpage:glassOpacity") || 56);
+    const base = nextDark ? "30,30,30" : "255,255,255";
+    const baseFocus = nextDark ? "40,40,40" : "255,255,255";
+    document.documentElement.style.setProperty("--glass-bg", `rgba(${base},${glass / 100})`);
+    document.documentElement.style.setProperty("--glass-bg-focus", `rgba(${baseFocus},${Math.min(0.72, glass / 100 + 0.16).toFixed(2)})`);
+    document.documentElement.style.setProperty("--glass-border", nextDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.5)");
+    window.dispatchEvent(new Event("theme-change"));
+  };
+  return (
+    <div className="group/dock relative flex shrink-0">
+      <button
+        type="button"
+        aria-label="切换主题"
+        onClick={toggle}
+        className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
+      >
+        {isDark ? <SunIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" /> : <MoonIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" />}
+      </button>
+      <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all duration-200 group-hover/dock:translate-y-0 translate-y-1 group-hover/dock:opacity-100 dark:bg-white dark:text-zinc-900">
+        {isDark ? "浅色" : "深色"}
+      </div>
     </div>
   );
 }

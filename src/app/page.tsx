@@ -7,7 +7,8 @@ import { SearchBox } from "@/components/search-box";
 import { DockBar } from "@/components/dock-bar";
 import { Hitokoto } from "@/components/hitokoto";
 import { AppGrid } from "@/components/app-grid";
-import { DEFAULT_GROUPS } from "@/lib/data";
+import { SettingsPanel } from "@/components/settings-panel";
+import { DEFAULT_GROUPS, type Group } from "@/lib/data";
 
 export default function Home() {
   const [now, setNow] = useState<Date | null>(null);
@@ -15,7 +16,29 @@ export default function Home() {
   const [showGrid, setShowGrid] = useState(false);
   const [gridGroupIdx, setGridGroupIdx] = useState(0);
   const [dotTipIdx, setDotTipIdx] = useState<number | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<"appearance" | "wallpaper" | "search" | "grid" | "data" | "about">("appearance");
+  const [groupsData, setGroupsData] = useState<Group[]>(DEFAULT_GROUPS);
   const reduce = useReducedMotion();
+
+  useEffect(() => {
+    const loadGroups = () => {
+      try {
+        const raw = localStorage.getItem("startpage:groups");
+        if (raw) {
+          const parsed = JSON.parse(raw) as Group[];
+          if (Array.isArray(parsed) && parsed.length) setGroupsData(parsed);
+        }
+      } catch {}
+    };
+    loadGroups();
+    window.addEventListener("storage", loadGroups);
+    window.addEventListener("groups-change" as never, loadGroups);
+    return () => {
+      window.removeEventListener("storage", loadGroups);
+      window.removeEventListener("groups-change" as never, loadGroups);
+    };
+  }, []);
 
   // 分页点标签：tab 切换（点击/滚动）时弹出 1s 后隐藏，修复移动端 hover 常驻不收回
   useEffect(() => {
@@ -39,6 +62,36 @@ export default function Home() {
   useEffect(() => {
     localStorage.setItem("startpage:gridGroup", String(gridGroupIdx));
   }, [gridGroupIdx]);
+
+  // 外观持久化：主题/毛玻璃/壁纸亮度在刷新后即时生效（毛玻璃随主题自动切换基色，跟随系统时解析为实际明暗）
+  useEffect(() => {
+    const theme = localStorage.getItem("startpage:theme");
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    const resolved = !theme || theme === "system" ? (mql.matches ? "dark" : "light") : theme;
+    document.documentElement.setAttribute("data-theme", resolved);
+    const isDark = resolved === "dark";
+    const glass = localStorage.getItem("startpage:glassOpacity");
+    if (glass) {
+      const v = Number(glass);
+      if (Number.isFinite(v)) {
+        const base = isDark ? "30,30,30" : "255,255,255";
+        const baseFocus = isDark ? "40,40,40" : "255,255,255";
+        document.documentElement.style.setProperty("--glass-bg", `rgba(${base},${v / 100})`);
+        document.documentElement.style.setProperty("--glass-bg-focus", `rgba(${baseFocus},${Math.min(0.72, v / 100 + 0.16).toFixed(2)})`);
+        document.documentElement.style.setProperty("--glass-border", isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.5)");
+      }
+    }
+    const bright = localStorage.getItem("startpage:wallpaperBrightness");
+    if (bright) {
+      const v = Number(bright);
+      // 0 视为异常旧值，回退 100
+      const norm = !Number.isFinite(v) || v === 0 ? 100 : Math.min(120, Math.max(70, v));
+      document.documentElement.style.setProperty("--wallpaper-brightness", String(norm / 100));
+      if (v === 0 || v !== norm) localStorage.setItem("startpage:wallpaperBrightness", String(norm));
+    } else {
+      document.documentElement.style.setProperty("--wallpaper-brightness", "1");
+    }
+  }, []);
 
   useEffect(() => {
     const tick = () => setNow(new Date());
@@ -67,6 +120,7 @@ export default function Home() {
       className="relative flex min-h-[100dvh] flex-col"
       onContextMenu={(e) => {
         e.preventDefault();
+        if (settingsOpen) return;
         if (showGrid) return;
         if (searchFocused) return;
         const target = e.target as HTMLElement;
@@ -83,6 +137,7 @@ export default function Home() {
         setShowGrid(true);
       }}
       onClick={(e) => {
+        if (settingsOpen) return;
         if (!showGrid) return;
         const target = e.target as HTMLElement;
         if (target.closest("[data-grid]") || target.closest("[data-dock]") || target.closest("[data-pagination]")) return;
@@ -102,8 +157,8 @@ export default function Home() {
               <span className="inline-flex items-center justify-center">
                 <span>{hours}</span>
                 <span className="mx-2 inline-flex flex-col items-center justify-center gap-2">
-                  <span className="size-1.5 rounded-full bg-white shadow-[0_1px_6px_rgba(0,0,0,0.35)]" aria-hidden />
-                  <span className="size-1.5 rounded-full bg-white shadow-[0_1px_6px_rgba(0,0,0,0.35)]" aria-hidden />
+                  <span className="time-dot size-1.5 rounded-full bg-white shadow-[0_1px_6px_rgba(0,0,0,0.35)] dark:!bg-white" aria-hidden />
+                  <span className="time-dot size-1.5 rounded-full bg-white shadow-[0_1px_6px_rgba(0,0,0,0.35)] dark:!bg-white" aria-hidden />
                 </span>
                 <span>{minutes}</span>
               </span>
@@ -168,7 +223,7 @@ export default function Home() {
       {showGrid && (
         <div className="pointer-events-none fixed inset-x-0 bottom-[102px] z-20 flex justify-center px-4" data-pagination>
           <div className="pointer-events-auto flex items-center justify-center gap-2.5">
-            {["全部", ...DEFAULT_GROUPS.map((g) => g.title)].map((title, idx) => (
+            {["全部", ...groupsData.map((g) => g.title)].map((title, idx) => (
               <div key={title} className="relative flex items-center justify-center">
                 <button
                   aria-label={title}
@@ -214,8 +269,17 @@ export default function Home() {
       </div>
 
       <div data-dock>
-        <DockBar isGridOpen={showGrid} onToggleGrid={() => setShowGrid((v) => !v)} />
+        <DockBar
+          isGridOpen={showGrid}
+          onToggleGrid={() => setShowGrid((v) => !v)}
+          onOpenSettings={(tab) => {
+            if (tab) setSettingsTab(tab as never);
+            setSettingsOpen(true);
+          }}
+        />
       </div>
+
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} initialTab={settingsTab} onTabChange={setSettingsTab} />
     </div>
   );
 }

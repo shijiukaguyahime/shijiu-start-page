@@ -77,7 +77,7 @@ export function Hitokoto() {
         className={cn(
           "relative w-full rounded-2xl px-4 py-4 text-center transition-all duration-500",
           "bg-transparent",
-          "group-hover:bg-white/20 group-hover:backdrop-blur-[18px] group-hover:backdrop-saturate-[160%] group-hover:shadow-[0_8px_32px_rgba(0,0,0,0.12)]",
+          "group-hover:bg-white/20 group-hover:backdrop-blur-[18px] group-hover:backdrop-saturate-[160%] group-hover:shadow-[0_8px_32px_rgba(0,0,0,0.12)] dark:group-hover:bg-white/10 dark:group-hover:shadow-[0_8px_32px_rgba(0,0,0,0.4)]",
         )}
       >
         <p className="text-center text-sm font-medium leading-relaxed text-white drop-shadow-[0_1px_8px_rgba(0,0,0,0.35)]">

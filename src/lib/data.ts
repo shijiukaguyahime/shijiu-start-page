@@ -94,5 +94,6 @@ export const SEARCH_ENGINES: SearchEngine[] = [
   { id: "bing", label: "Bing", url: "https://www.bing.com/search?q={q}", icon: "B", color: "#0a7ce4" },
   { id: "google", label: "Google", url: "https://www.google.com/search?q={q}", icon: "G", color: "#4285f4" },
   { id: "baidu", label: "百度", url: "https://www.baidu.com/s?wd={q}", icon: "百", color: "#2932e1" },
+  { id: "baidu-translate", label: "百度翻译", url: "https://fanyi.baidu.com/#auto/zh/{q}", icon: "译", color: "#2932e1" },
   { id: "github", label: "GitHub", url: "https://github.com/search?q={q}", icon: "G", color: "#181717" },
 ];
