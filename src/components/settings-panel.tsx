@@ -1178,6 +1178,13 @@ function AboutPane() {
           </ul>
         </Section>
 
+        <Section title="图标宫格" desc="桌面拖拽 · 移动端上下/左右滑动">
+          <ul className="space-y-1.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+            <li>• 宫格内<span className="font-medium text-zinc-900 dark:text-zinc-100">上下滑动翻阅菜单</span>，<span className="font-medium text-zinc-900 dark:text-zinc-100">左右滑动切换分组</span>；PC 端在图标区外纵向滚轮切换分组</li>
+            <li>• 桌面支持拖拽排序，移动端自动禁用拖拽以保证滚动流畅；分组在<span className="font-medium text-zinc-900 dark:text-zinc-100">设置-图标</span>中新增/重命名/上下移/删除</li>
+          </ul>
+        </Section>
+
         <Section title="数据与声明" desc="本地优先 · 开源免费">
           <ul className="space-y-1.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
             <li>• 本站不保存任何数据，所有数据仅存于浏览器 <span className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-xs dark:bg-zinc-800">localStorage</span>，无云同步；可在 <span className="font-medium text-zinc-900 dark:text-zinc-100">设置-数据</span> 导出 JSON 备份，换设备导入即可</li>

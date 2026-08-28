@@ -18,6 +18,12 @@ export function DockBar({
   onOpenSettings?: (tab?: string) => void;
 }) {
   const reduce = useReducedMotion();
+  const [tip, setTip] = useState<{ label: string; x: number; y: number } | null>(null);
+  const showTip = (e: React.MouseEvent<HTMLElement>, label: string) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setTip({ label, x: rect.left + rect.width / 2, y: rect.top });
+  };
+  const hideTip = () => setTip(null);
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-2.5 z-30 flex justify-center px-2">
@@ -26,96 +32,98 @@ export function DockBar({
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
         aria-label="快捷方式 Dock 栏"
-        className="pointer-events-auto flex max-w-[calc(100vw-16px)] items-center gap-2 overflow-visible rounded-[18px] glass-dock p-2 md:gap-2.5 [&::-webkit-scrollbar]:hidden"
-        style={{ scrollbarWidth: "none" } as React.CSSProperties}
+        className="pointer-events-auto flex max-w-[calc(100vw-16px)] items-center gap-2 overflow-x-auto overflow-y-visible rounded-[18px] glass-dock p-2 [-ms-overflow-style:none] [scrollbar-width:none] md:gap-2.5 md:overflow-visible [&::-webkit-scrollbar]:hidden"
       >
         {/* 图标（展开收起） */}
-        <div className="group/dock relative flex shrink-0">
+        <div className="relative flex shrink-0" onMouseEnter={(e) => showTip(e, isGridOpen ? "返回首页" : "图标")} onMouseLeave={hideTip}>
           <button
             type="button"
             aria-label={isGridOpen ? "返回首页" : "图标"}
             aria-haspopup="dialog"
             aria-expanded={isGridOpen}
-            onClick={onToggleGrid}
-            className={`flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm transition-all active:scale-[0.95] ${isGridOpen ? "bg-white text-zinc-900 hover:bg-zinc-100 dark:bg-zinc-700 dark:text-white" : "bg-zinc-900 text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleGrid();
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onToggleGrid();
+            }}
+            className={`flex size-10 shrink-0 cursor-pointer touch-manipulation items-center justify-center rounded-xl shadow-sm transition-all active:scale-[0.95] ${isGridOpen ? "bg-white text-zinc-900 hover:bg-zinc-100 dark:bg-zinc-700 dark:text-white" : "bg-zinc-900 text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"}`}
           >
             <SquaresFourIcon weight="bold" className="size-5" aria-hidden />
           </button>
-          <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all duration-200 ease-[var(--spring)] group-hover/dock:translate-y-0 translate-y-1 group-hover/dock:opacity-100 dark:bg-white dark:text-zinc-900">
-            {isGridOpen ? "返回首页" : "图标"}
-          </div>
         </div>
 
-        <span className="mx-0.5 h-6 w-px shrink-0 bg-zinc-900/10 dark:bg-white/15" aria-hidden />
+        <span className="mx-0 h-6 w-px shrink-0 bg-zinc-900/10 dark:bg-white/15 md:mx-0.5" aria-hidden />
 
         {/* 翻译 */}
-        <div className="group/dock relative flex shrink-0">
+        <div className="relative flex shrink-0" onMouseEnter={(e) => showTip(e, "翻译")} onMouseLeave={hideTip}>
           <button
             type="button"
             aria-label="翻译"
             onClick={() => window.open("https://fanyi.baidu.com", "_blank", "noopener")}
-            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
+            className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
           >
             <span className="flex size-7 items-center justify-center rounded-full bg-white text-xs font-bold text-zinc-700 shadow-sm ring-1 ring-black/5 dark:bg-zinc-700 dark:text-zinc-200 dark:ring-white/10">译</span>
           </button>
-          <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all duration-200 ease-[var(--spring)] group-hover/dock:translate-y-0 translate-y-1 group-hover/dock:opacity-100 dark:bg-white dark:text-zinc-900">
-            翻译
-          </div>
         </div>
 
-        {/* 相册 */}
-        <div className="group/dock relative flex shrink-0">
+        {/* 壁纸 */}
+        <div className="relative flex shrink-0" onMouseEnter={(e) => showTip(e, "壁纸")} onMouseLeave={hideTip}>
           <button
             type="button"
-            aria-label="相册"
+            aria-label="壁纸"
             onClick={() => onOpenSettings?.("wallpaper")}
-            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
+            className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
           >
             <ImageIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" aria-hidden />
           </button>
-          <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all duration-200 ease-[var(--spring)] group-hover/dock:translate-y-0 translate-y-1 group-hover/dock:opacity-100 dark:bg-white dark:text-zinc-900">
-            相册
-          </div>
         </div>
 
         {/* 搜索 */}
-        <div className="group/dock relative flex shrink-0">
+        <div className="relative flex shrink-0" onMouseEnter={(e) => showTip(e, "搜索")} onMouseLeave={hideTip}>
           <button
             type="button"
             aria-label="搜索"
             onClick={() => onOpenSettings?.("search")}
-            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
+            className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
           >
             <MagnifyingGlassIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" aria-hidden />
           </button>
-          <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all duration-200 ease-[var(--spring)] group-hover/dock:translate-y-0 translate-y-1 group-hover/dock:opacity-100 dark:bg-white dark:text-zinc-900">
-            搜索
-          </div>
         </div>
 
         {/* 切换主题 */}
-        <ThemeToggle />
+        <ThemeToggle onShowTip={showTip} onHideTip={hideTip} />
 
         {/* 设置 */}
-        <div className="group/dock relative flex shrink-0">
+        <div className="relative flex shrink-0" onMouseEnter={(e) => showTip(e, "设置")} onMouseLeave={hideTip}>
           <button
             type="button"
             aria-label="设置"
             onClick={() => onOpenSettings?.("appearance")}
-            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
+            className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
           >
             <GearIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" aria-hidden />
           </button>
-          <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all duration-200 ease-[var(--spring)] group-hover/dock:translate-y-0 translate-y-1 group-hover/dock:opacity-100 dark:bg-white dark:text-zinc-900">
-            设置
-          </div>
         </div>
+        {/* 移动端右侧内边距占位，避免最右图标紧贴父容器 */}
+        <span className="hidden shrink-0 w-2 max-md:block" aria-hidden />
       </motion.nav>
+      {tip && (
+        <div
+          className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white opacity-100 shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all duration-200 ease-[var(--spring)] dark:bg-white dark:text-zinc-900"
+          style={{ left: tip.x, top: tip.y - 10, transform: "translate(-50%, -100%)" }}
+        >
+          {tip.label}
+        </div>
+      )}
     </div>
   );
 }
 
-function ThemeToggle() {
+function ThemeToggle({ onShowTip, onHideTip }: { onShowTip?: (e: React.MouseEvent<HTMLElement>, label: string) => void; onHideTip?: () => void } = {}) {
   const [theme, setTheme] = useState<"system" | "light" | "dark">("system");
   const [isDark, setIsDark] = useState(false);
   useEffect(() => {
@@ -171,26 +179,50 @@ function ThemeToggle() {
   };
   const label = theme === "system" ? "跟随系统" : theme === "light" ? "浅色" : "深色";
   const ariaLabel = theme === "system" ? "主题：跟随系统，点击切换" : theme === "light" ? "主题：浅色，点击切换" : "主题：深色，点击切换";
+  const handleEnter = (e: React.MouseEvent<HTMLElement>) => {
+    if (onShowTip) onShowTip(e, label);
+  };
+  const handleLeave = () => {
+    if (onHideTip) onHideTip();
+  };
+  // 若父级未提供 tip 代理，则自行渲染 fixed tooltip 避免被 overflow 裁剪
+  const [localTip, setLocalTip] = useState<{ x: number; y: number } | null>(null);
+  const showLocal = (e: React.MouseEvent<HTMLElement>) => {
+    if (onShowTip) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setLocalTip({ x: rect.left + rect.width / 2, y: rect.top });
+  };
+  const hideLocal = () => {
+    if (onHideTip) return;
+    setLocalTip(null);
+  };
   return (
-    <div className="group/dock relative flex shrink-0">
-      <button
-        type="button"
-        aria-label={ariaLabel}
-        onClick={cycle}
-        className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
-      >
-        {theme === "system" ? (
-          <MonitorIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" aria-hidden />
-        ) : isDark ? (
-          <MoonIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" aria-hidden />
-        ) : (
-          <SunIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" aria-hidden />
-        )}
-      </button>
-      <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white opacity-0 shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all duration-200 ease-[var(--spring)] group-hover/dock:translate-y-0 translate-y-1 group-hover/dock:opacity-100 dark:bg-white dark:text-zinc-900">
-        {label}
+    <>
+      <div className="relative flex shrink-0" onMouseEnter={onShowTip ? handleEnter : showLocal} onMouseLeave={onShowTip ? handleLeave : hideLocal}>
+        <button
+          type="button"
+          aria-label={ariaLabel}
+          onClick={cycle}
+          className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
+        >
+          {theme === "system" ? (
+            <MonitorIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" aria-hidden />
+          ) : isDark ? (
+            <MoonIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" aria-hidden />
+          ) : (
+            <SunIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" aria-hidden />
+          )}
+        </button>
       </div>
-    </div>
+      {localTip && !onShowTip && (
+        <div
+          className="pointer-events-none fixed z-50 -translate-x-1/2 whitespace-nowrap rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] dark:bg-white dark:text-zinc-900"
+          style={{ left: localTip.x, top: localTip.y - 10, transform: "translate(-50%, -100%)" }}
+        >
+          {label}
+        </div>
+      )}
+    </>
   );
 }
 
