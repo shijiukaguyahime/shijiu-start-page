@@ -315,29 +315,17 @@ input[type="range"].accent-zinc-900 {
 [data-theme="dark"] .bg-white {
   background-color: var(--surface) !important;
 }
-[data-theme="dark"] .bg-white\/55 {
-  background-color: rgba(39, 39, 42, 0.6) !important;
-}
 [data-theme="dark"] .bg-white\/30 {
   background-color: rgba(39, 39, 42, 0.3) !important;
 }
-[data-theme="dark"] .bg-white\/40 {
-  background-color: rgba(39, 39, 42, 0.4) !important;
-}
 [data-theme="dark"] .bg-white\/60 {
   background-color: rgba(63, 63, 70, 0.4) !important;
-}
-[data-theme="dark"] .bg-white\/90 {
-  background-color: rgba(39, 39, 42, 0.9) !important;
 }
 [data-theme="dark"] .bg-white\/85 {
   background-color: rgba(39, 39, 42, 0.85) !important;
 }
 [data-theme="dark"] .bg-white\/70 {
   background-color: rgba(39, 39, 42, 0.7) !important;
-}
-[data-theme="dark"] .bg-white\/45 {
-  background-color: rgba(39, 39, 42, 0.45) !important;
 }
 [data-theme="dark"] .bg-zinc-50 {
   background-color: var(--surface-subtle) !important;

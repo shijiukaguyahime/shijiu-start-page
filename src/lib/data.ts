@@ -72,17 +72,6 @@ export const DEFAULT_GROUPS: Group[] = [
   },
 ];
 
-export const DOCK_SHORTCUTS: Shortcut[] = [
-  { id: "d1", name: "GitHub", url: "https://github.com", color: "#24292f" },
-  { id: "d2", name: "Gmail", url: "https://mail.google.com", color: "#EA4335" },
-  { id: "d3", name: "Figma", url: "https://figma.com", color: "#9747FF" },
-  { id: "d4", name: "Notion", url: "https://notion.so", color: "#000" },
-  { id: "d5", name: "YouTube", url: "https://youtube.com", color: "#FF0000" },
-  { id: "d6", name: "Vercel", url: "https://vercel.com", color: "#000" },
-  { id: "d7", name: "Linear", url: "https://linear.app", color: "#5E6AD2" },
-  { id: "d8", name: "X", url: "https://x.com", color: "#000" },
-];
-
 export type SearchEngine = {
   id: string;
   label: string;

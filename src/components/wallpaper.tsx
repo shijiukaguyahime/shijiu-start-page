@@ -219,7 +219,6 @@ export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
         }}
       />
       <div className="absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-black/20 to-transparent" />
-      <div className="absolute inset-0 backdrop-blur-[1px] transition-opacity duration-[620ms] ease-[var(--spring)]" style={{ opacity: blurred ? 1 : 0, pointerEvents: "none" }} />
     </div>
   );
 }

@@ -1,10 +1,21 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import Sortable from "sortablejs";
-import { CalendarBlankIcon, FireIcon } from "@phosphor-icons/react";
+import { CalendarBlankIcon, FireIcon, PlusIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
 import { DEFAULT_GROUPS, type Group, type Shortcut } from "@/lib/data";
+import { DropdownMenu } from "@/components/ui/dropdown";
+import { IconFormModal } from "@/components/ui/icon-form-modal";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
+import { message } from "@/components/ui/message";
+import {
+  addShortcut,
+  removeShortcut,
+  updateShortcut,
+  getTargetGroupIdxForAdd,
+  saveGroups,
+} from "@/lib/groups";
 
 type GridItem = Shortcut & {
   w?: 1 | 2;
@@ -32,9 +43,7 @@ function loadItems(): GridItem[] {
     const raw = localStorage.getItem(STORAGE_ITEMS) || localStorage.getItem("startpage:groups");
     if (raw) {
       const parsed = JSON.parse(raw) as unknown;
-      // 支持两种导入：直接 GridItem[] 或 {groups: Group[]} 或 Group[]
       if (Array.isArray(parsed) && parsed.length) {
-        // 若是 Group[]（含 shortcuts），展平为 GridItem[]
         if ((parsed[0] as { shortcuts?: unknown })?.shortcuts) {
           const groups = parsed as { shortcuts: GridItem[] }[];
           return groups.flatMap((g) => g.shortcuts) as GridItem[];
@@ -50,8 +59,57 @@ function loadItems(): GridItem[] {
   return buildItems();
 }
 
+function mergeItemsWithGroups(prev: GridItem[], groupFlat: GridItem[]): GridItem[] {
+  const groupMap = new Map(groupFlat.map((s) => [s.id, s]));
+  const groupIds = new Set(groupFlat.map((s) => s.id));
+  let next = prev.filter((p) => groupIds.has(p.id));
+  next = next.map((p) => {
+    const g = groupMap.get(p.id);
+    if (g && (g.name !== p.name || g.url !== p.url || g.color !== p.color)) {
+      return { ...p, name: g.name, url: g.url, color: g.color };
+    }
+    return p;
+  });
+  const existing = new Set(next.map((p) => p.id));
+  const toAdd = groupFlat.filter((s) => !existing.has(s.id));
+  for (const add of toAdd) {
+    const flatIdx = groupFlat.findIndex((s) => s.id === add.id);
+    let insertAfterIdx = -1;
+    for (let i = flatIdx - 1; i >= 0; i--) {
+      const predId = groupFlat[i].id;
+      const idxInNext = next.findIndex((p) => p.id === predId);
+      if (idxInNext !== -1) {
+        insertAfterIdx = idxInNext;
+        break;
+      }
+    }
+    if (insertAfterIdx === -1) {
+      let insertBeforeIdx = -1;
+      for (let i = flatIdx + 1; i < groupFlat.length; i++) {
+        const succId = groupFlat[i].id;
+        const idx = next.findIndex((p) => p.id === succId);
+        if (idx !== -1) {
+          insertBeforeIdx = idx;
+          break;
+        }
+      }
+      if (insertBeforeIdx !== -1) {
+        next.splice(insertBeforeIdx, 0, { ...add, w: 1 as const, h: 1 as const });
+      } else {
+        next.push({ ...add, w: 1 as const, h: 1 as const });
+      }
+    } else {
+      next.splice(insertAfterIdx + 1, 0, { ...add, w: 1 as const, h: 1 as const });
+    }
+  }
+  if (next.length === 0 && groupFlat.length) {
+    return groupFlat.map((s) => ({ ...s, w: 1 as const, h: 1 as const }));
+  }
+  return next;
+}
+
 export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
-  const [items, setItems] = useState<GridItem[]>(() => buildItems());
+  const [items, setItems] = useState<GridItem[]>(() => loadItems());
   const [groupsData, setGroupsData] = useState<Group[]>(() => {
     if (typeof window === "undefined") return DEFAULT_GROUPS;
     try {
@@ -67,13 +125,72 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
   const gridRef = useRef<HTMLDivElement>(null);
   const gridScrollRef = useRef<HTMLDivElement>(null);
 
+  // 宫格图标右键/长按菜单
+  const [menu, setMenu] = useState<{ x: number; y: number; shortcut: GridItem } | null>(null);
+  const [editTarget, setEditTarget] = useState<GridItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<GridItem | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+
+  const closeMenu = useCallback(() => setMenu(null), []);
+
+  // 长按计时器（触屏）
+  const longPressTimer = useRef<number | null>(null);
+  const longPressPos = useRef<{ x: number; y: number } | null>(null);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, item: GridItem) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ x: e.clientX, y: e.clientY, shortcut: item });
+  }, []);
+
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent, item: GridItem) => {
+      const t = e.touches[0];
+      if (!t) return;
+      longPressPos.current = { x: t.clientX, y: t.clientY };
+      if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = window.setTimeout(() => {
+        setMenu({ x: t.clientX, y: t.clientY, shortcut: item });
+        longPressPos.current = null;
+      }, 560) as unknown as number;
+    },
+    [],
+  );
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    const t = e.touches[0];
+    if (!t || !longPressPos.current) return;
+    const dx = t.clientX - longPressPos.current.x;
+    const dy = t.clientY - longPressPos.current.y;
+    if (Math.hypot(dx, dy) > 12) {
+      if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+      longPressPos.current = null;
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+    longPressTimer.current = null;
+    longPressPos.current = null;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+    };
+  }, []);
+
   useEffect(() => {
     const loadGroups = () => {
       try {
         const raw = localStorage.getItem("startpage:groups");
         if (raw) {
           const parsed = JSON.parse(raw) as Group[];
-          if (Array.isArray(parsed) && parsed.length) setGroupsData(parsed);
+          if (Array.isArray(parsed) && parsed.length) {
+            setGroupsData(parsed);
+            setItems((prev) => mergeItemsWithGroups(prev, parsed.flatMap((g) => g.shortcuts) as GridItem[]));
+          }
         }
       } catch {}
     };
@@ -86,32 +203,33 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
     };
   }, []);
 
-  // 首次挂载从 localStorage 恢复拖拽后的顺序
-  useEffect(() => {
-    setItems(loadItems());
-  }, []);
-
-  // 拖拽后落盘，支撑 JSON 导出与刷新保持
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_ITEMS, JSON.stringify(items));
     } catch {}
   }, [items]);
 
-  const groups = ["全部", ...groupsData.map((g) => g.title)];
-  const filtered =
-    groupIdx === 0
-      ? items
-      : items.filter((it) => {
-          const g = groupsData[groupIdx - 1];
-          if (!g) return false;
-          return g.shortcuts.some((s) => s.id === it.id);
-        });
-  const displayItems = groupIdx === 0 ? filtered : filtered.filter((it) => !it.widget);
+  const groups = useMemo(() => ["全部", ...groupsData.map((g) => g.title)], [groupsData]);
+  const filtered = useMemo(
+    () =>
+      groupIdx === 0
+        ? items
+        : items.filter((it) => {
+            const g = groupsData[groupIdx - 1];
+            if (!g) return false;
+            return g.shortcuts.some((s) => s.id === it.id);
+          }),
+    [items, groupsData, groupIdx],
+  );
+  const displayItems = useMemo(() => (groupIdx === 0 ? filtered : filtered.filter((it) => !it.widget)), [filtered, groupIdx]);
+  const displayItemsRef = useRef<GridItem[]>(displayItems);
+  useEffect(() => {
+    displayItemsRef.current = displayItems;
+  }, [displayItems]);
 
+  // 拖拽（仅桌面）
   useEffect(() => {
     if (!open || !gridRef.current) return;
-    // 移动端禁用拖拽，避免与垂直滚动手势冲突
     if (typeof window !== "undefined") {
       const isCoarse = window.matchMedia("(pointer: coarse)").matches;
       const isNarrow = window.matchMedia("(max-width: 768px)").matches;
@@ -125,11 +243,13 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
       dragClass: "opacity-90",
       draggable: "[data-draggable]",
       dataIdAttr: "data-id",
+      filter: "[data-no-drag]",
+      preventOnFilter: false,
       onEnd: (evt) => {
         const { oldIndex, newIndex } = evt;
         if (oldIndex == null || newIndex == null || oldIndex === newIndex) return;
         setItems((prev) => {
-          const visibleIds = displayItems.map((d) => d.id);
+          const visibleIds = displayItemsRef.current.map((d) => d.id);
           const movedId = visibleIds[oldIndex];
           const targetId = visibleIds[newIndex];
           if (!movedId || !targetId) return prev;
@@ -144,7 +264,7 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
       },
     });
     return () => sortable.destroy();
-  }, [open, displayItems, groupIdx]);
+  }, [open, groupIdx]);
 
   useEffect(() => {
     if (!open) return;
@@ -162,7 +282,6 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
     return () => window.removeEventListener("wheel", onWheel);
   }, [open, groups.length, onGroupChange]);
 
-  // 移动端：宫格区域左右滑动切换分组，上下滑动保持滚动
   useEffect(() => {
     if (!open) return;
     const el = gridScrollRef.current;
@@ -187,12 +306,10 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
       if (!t || isHorizontal === false) return;
       const dx = t.clientX - startX;
       const dy = t.clientY - startY;
-      // 判定方向：首次移动时确定主方向
       if (isHorizontal === null) {
         if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
         isHorizontal = Math.abs(dx) > Math.abs(dy);
       }
-      // 横向滑动时阻止垂直滚动的误触，但不阻止纵向滚动
       if (isHorizontal) {
         if (Math.abs(dx) > 12) e.preventDefault();
       }
@@ -204,10 +321,9 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
       const dx = t.clientX - startX;
       const dy = t.clientY - startY;
       const dt = Date.now() - startTime;
-      // 阈值：横向位移 >40px 且横向主导 且时间 <600ms
       if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) && dt < 600) {
-        if (dx < 0) onGroupChange((i) => (i + 1) % groups.length); // 左滑 → 下一组
-        else onGroupChange((i) => (i - 1 + groups.length) % groups.length); // 右滑 → 上一组
+        if (dx < 0) onGroupChange((i) => (i + 1) % groups.length);
+        else onGroupChange((i) => (i - 1 + groups.length) % groups.length);
       }
       isHorizontal = null;
     };
@@ -222,41 +338,112 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
     };
   }, [open, groups.length, onGroupChange]);
 
+  // 点击外部关闭菜单（点击壁纸空白不触发，因 DropdownMenu 内部已处理）
+  useEffect(() => {
+    if (!menu) return;
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement;
+      // 若点击在菜单内则忽略（由 DropdownMenu 内部处理）；否则关闭
+      if (target.closest("[role='menu']")) return;
+      setMenu(null);
+    };
+    const tid = setTimeout(() => {
+      document.addEventListener("mousedown", onDown);
+      document.addEventListener("touchstart", onDown, { passive: true });
+    }, 80);
+    return () => {
+      clearTimeout(tid);
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("touchstart", onDown);
+    };
+  }, [menu]);
+
+  const handleAdd = (data: { name: string; url: string }) => {
+    const targetIdx = getTargetGroupIdxForAdd(groupIdx, groupsData);
+    const { next } = addShortcut(groupsData, targetIdx, data);
+    setGroupsData(next);
+    saveGroups(next);
+    setItems((prev) => mergeItemsWithGroups(prev, next.flatMap((g) => g.shortcuts) as GridItem[]));
+  };
+
+  const handleEdit = (data: { name: string; url: string }) => {
+    if (!editTarget) return;
+    const next = updateShortcut(groupsData, editTarget.id, data);
+    setGroupsData(next);
+    saveGroups(next);
+    setItems((prev) => prev.map((p) => (p.id === editTarget.id ? { ...p, name: data.name, url: data.url } : p)));
+    setEditTarget(null);
+  };
+
+  const handleDelete = () => {
+    if (!deleteTarget) return;
+    const next = removeShortcut(groupsData, deleteTarget.id);
+    setGroupsData(next);
+    saveGroups(next);
+    setItems((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+    message.success("已删除");
+    setDeleteTarget(null);
+    setMenu(null);
+  };
+
   if (!open) return null;
 
   return (
-    <div ref={gridScrollRef} className="flex w-full max-w-[880px] flex-1 flex-col min-h-0" data-grid>
-      {/* 图标宫格：gap 统一 */}
-      <div className="relative flex-1 overflow-y-auto overscroll-contain px-2 py-2 md:max-h-[52vh] max-h-[56vh] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <AnimatePresence mode="popLayout" initial={false}>
-          <motion.div
-            key={groupIdx}
-            ref={gridRef}
-            initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8, filter: "blur(6px)" }}
-            animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, filter: "blur(0px)" }}
-            exit={reduce ? { opacity: 0 } : { opacity: 0, y: -6, filter: "blur(6px)" }}
-            transition={
-              reduce
-                ? { duration: 0.14 }
-                : {
-                    opacity: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
-                    y: { duration: 0.26, ease: [0.22, 1, 0.36, 1] },
-                    filter: { duration: 0.22, ease: "easeOut" },
-                  }
-            }
-            className="grid auto-rows-fr grid-cols-4 gap-4 md:grid-cols-6 md:gap-4 lg:grid-cols-8 lg:gap-5 gpu"
-          >
-            {displayItems.map((item, idx) => {
-              const spanClass =
-                item.w === 2 && item.h === 2
-                  ? "col-span-2 row-span-2 aspect-square"
-                  : item.w === 2 && item.h === 1
-                    ? "col-span-2 aspect-[2/1]"
-                    : item.w === 1 && item.h === 2
-                      ? "col-span-1 row-span-2 aspect-[1/2]"
-                      : "col-span-1 aspect-square";
+    <>
+      <div ref={gridScrollRef} className="flex w-full max-w-[880px] flex-1 flex-col min-h-0" data-grid>
+        <div className="relative flex-1 overflow-y-auto overscroll-contain px-2 py-2 md:max-h-[52vh] max-h-[56vh] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <AnimatePresence mode="popLayout" initial={false}>
+            <motion.div
+              key={groupIdx}
+              ref={gridRef}
+              initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8, filter: "blur(6px)" }}
+              animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, filter: "blur(0px)" }}
+              exit={reduce ? { opacity: 0 } : { opacity: 0, y: -6, filter: "blur(6px)" }}
+              transition={
+                reduce
+                  ? { duration: 0.14 }
+                  : {
+                      opacity: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
+                      y: { duration: 0.26, ease: [0.22, 1, 0.36, 1] },
+                      filter: { duration: 0.22, ease: "easeOut" },
+                    }
+              }
+              className="grid auto-rows-fr grid-cols-4 gap-4 md:grid-cols-6 md:gap-4 lg:grid-cols-8 lg:gap-5 gpu"
+            >
+              {displayItems.map((item, idx) => {
+                const spanClass =
+                  item.w === 2 && item.h === 2
+                    ? "col-span-2 row-span-2 aspect-square"
+                    : item.w === 2 && item.h === 1
+                      ? "col-span-2 aspect-[2/1]"
+                      : item.w === 1 && item.h === 2
+                        ? "col-span-1 row-span-2 aspect-[1/2]"
+                        : "col-span-1 aspect-square";
 
-              if (item.widget) {
+                if (item.widget) {
+                  return (
+                    <motion.div
+                      key={item.id}
+                      data-draggable
+                      data-id={item.id}
+                      initial={reduce ? false : { opacity: 0, y: 8, filter: "blur(4px)" }}
+                      animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                      transition={
+                        reduce
+                          ? { duration: 0 }
+                          : {
+                              duration: 0.32,
+                              delay: Math.min(idx * 0.012, 0.12),
+                              ease: [0.22, 1, 0.36, 1],
+                            }
+                      }
+                      className={`${spanClass} group/widget relative overflow-hidden rounded-[18px] border border-white/40 bg-white p-3 shadow-sm gpu`}
+                    >
+                      <WidgetContent item={item} />
+                    </motion.div>
+                  );
+                }
+
                 return (
                   <motion.div
                     key={item.id}
@@ -269,49 +456,126 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
                         ? { duration: 0 }
                         : {
                             duration: 0.32,
-                            delay: Math.min(idx * 0.012, 0.12),
+                            delay: Math.min(idx * 0.012, 0.14),
                             ease: [0.22, 1, 0.36, 1],
                           }
                     }
-                    className={`${spanClass} group/widget relative overflow-hidden rounded-[18px] border border-white/40 bg-white p-3 shadow-sm gpu`}
+                    className={`${spanClass} group/app flex flex-col items-center justify-center gap-2 py-1 text-center gpu`}
+                    onContextMenu={(e) => handleContextMenu(e, item)}
+                    onTouchStart={(e) => handleTouchStart(e, item)}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
                   >
-                    <WidgetContent item={item} />
+                    <a
+                      href={item.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      draggable={false}
+                      onDragStart={(e) => e.preventDefault()}
+                      onClick={(e) => {
+                        // 若菜单已打开，阻止跳转
+                        if (menu) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }
+                      }}
+                      className="flex flex-col items-center justify-center gap-2 py-1 text-center w-full"
+                    >
+                      <span className="flex size-16 items-center justify-center rounded-2xl bg-white shadow-[0_2px_10px_rgba(0,0,0,0.12)] transition-[transform,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/app:shadow-md group-hover/app:scale-[1.02] md:size-16 gpu dark:bg-zinc-800 dark:shadow-[0_2px_10px_rgba(0,0,0,0.3)]">
+                        <Favicon url={item.url} name={item.name} color={item.color} />
+                      </span>
+                      <span className="line-clamp-1 w-full truncate px-1 text-xs font-medium leading-tight text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.4)] dark:text-zinc-100">
+                        {item.name}
+                      </span>
+                    </a>
                   </motion.div>
                 );
-              }
+              })}
 
-              return (
-                <motion.a
-                  key={item.id}
-                  data-draggable
-                  data-id={item.id}
-                  href={item.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  initial={reduce ? false : { opacity: 0, y: 8, filter: "blur(4px)" }}
-                  animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                  transition={
-                    reduce
-                      ? { duration: 0 }
-                      : {
-                          duration: 0.32,
-                          delay: Math.min(idx * 0.012, 0.14),
-                          ease: [0.22, 1, 0.36, 1],
-                        }
-                  }
-                  className={`${spanClass} group/app flex flex-col items-center justify-center gap-2 py-1 text-center gpu`}
+              {/* 末尾添加图标：结构与普通图标完全一致，保证对齐 */}
+              <motion.div
+                key="__add__"
+                data-no-drag
+                initial={reduce ? false : { opacity: 0, y: 8, filter: "blur(4px)" }}
+                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                transition={
+                  reduce
+                    ? { duration: 0 }
+                    : {
+                        duration: 0.32,
+                        delay: Math.min(displayItems.length * 0.012, 0.14),
+                        ease: [0.22, 1, 0.36, 1],
+                      }
+                }
+                className="col-span-1 aspect-square group/app flex flex-col items-center justify-center gap-2 py-1 text-center gpu"
+              >
+                <button
+                  type="button"
+                  aria-label="添加图标"
+                  onClick={() => setAddOpen(true)}
+                  className="flex w-full flex-col items-center justify-center gap-2 py-1 text-center"
                 >
-                  <span className="flex size-16 items-center justify-center rounded-2xl bg-white shadow-[0_2px_10px_rgba(0,0,0,0.12)] transition-[transform,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/app:shadow-md group-hover/app:scale-[1.02] md:size-16 gpu dark:bg-zinc-800 dark:shadow-[0_2px_10px_rgba(0,0,0,0.3)]">
-                    <Favicon url={item.url} name={item.name} color={item.color} />
+                  <span className="flex size-16 items-center justify-center rounded-2xl border-2 border-dashed border-white/60 bg-white/20 shadow-[0_2px_10px_rgba(0,0,0,0.08)] backdrop-blur-[8px] transition-[transform,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/app:shadow-md group-hover/app:scale-[1.02] md:size-16 gpu dark:bg-white/10 dark:border-white/30">
+                    <PlusIcon weight="bold" className="size-6 text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.3)] dark:text-white" aria-hidden />
                   </span>
-                  <span className="line-clamp-1 w-full truncate px-1 text-xs font-medium leading-tight text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.4)] dark:text-zinc-100">{item.name}</span>
-                </motion.a>
-              );
-            })}
-          </motion.div>
-        </AnimatePresence>
+                  <span className="block h-[14px] w-full" aria-hidden />
+                </button>
+              </motion.div>
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </div>
-    </div>
+
+      <DropdownMenu
+        open={!!menu}
+        onClose={closeMenu}
+        anchor={menu ? { x: menu.x, y: menu.y } : null}
+        items={
+          menu
+            ? [
+                {
+                  key: "edit",
+                  label: "编辑",
+                  icon: <PencilSimpleIcon weight="bold" className="size-3.5" />,
+                  onClick: () => setEditTarget(menu.shortcut),
+                },
+                {
+                  key: "delete",
+                  label: "删除",
+                  danger: true,
+                  icon: <TrashIcon weight="bold" className="size-3.5" />,
+                  onClick: () => setDeleteTarget(menu.shortcut),
+                },
+              ]
+            : []
+        }
+      />
+
+      <IconFormModal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        mode="add"
+        onSubmit={handleAdd}
+      />
+
+      <IconFormModal
+        open={!!editTarget}
+        onClose={() => setEditTarget(null)}
+        mode="edit"
+        initialData={editTarget ? { name: editTarget.name, url: editTarget.url } : undefined}
+        onSubmit={handleEdit}
+      />
+
+      <ConfirmModal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="删除图标"
+        description={deleteTarget ? `确定删除“${deleteTarget.name}”？此操作不可撤销。` : undefined}
+        confirmText="删除"
+        danger
+        onConfirm={handleDelete}
+      />
+    </>
   );
 }
 

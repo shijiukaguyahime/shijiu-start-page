@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
   XIcon,
@@ -30,7 +30,13 @@ import {
   fetchNatureConcreteUrl,
 } from "@/components/wallpaper";
 import type { WallpaperValue } from "@/components/wallpaper";
-import { DEFAULT_GROUPS, SEARCH_ENGINES, type Group, type SearchEngine } from "@/lib/data";
+import Sortable from "sortablejs";
+import { DEFAULT_GROUPS, SEARCH_ENGINES, type Group, type SearchEngine, type Shortcut } from "@/lib/data";
+import { Modal } from "@/components/ui/modal";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
+import { IconFormModal } from "@/components/ui/icon-form-modal";
+import { message } from "@/components/ui/message";
+import { addShortcut, removeShortcut, updateShortcut, saveGroups } from "@/lib/groups";
 
 type TabId = "appearance" | "wallpaper" | "search" | "grid" | "data" | "about";
 
@@ -87,7 +93,7 @@ export function SettingsPanel({ open, onClose, initialTab = "appearance", onTabC
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="absolute inset-0 bg-zinc-900/20 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/30"
             onClick={onClose}
             aria-hidden
           />
@@ -102,7 +108,7 @@ export function SettingsPanel({ open, onClose, initialTab = "appearance", onTabC
             className="relative flex h-[min(640px,85vh)] w-full max-w-[820px] overflow-hidden rounded-[20px] glass-panel shadow-[0_24px_64px_rgba(0,0,0,0.22)] max-md:flex-col"
           >
             {/* 移动端顶部栏：标题与关闭左右布局，避免与横向 Tab 重叠 */}
-            <div className="hidden max-md:flex items-center justify-between border-b border-zinc-900/5 bg-white/40 px-4 py-3 backdrop-blur dark:border-white/10 dark:bg-zinc-800/50">
+            <div className="hidden max-md:flex items-center justify-between border-b border-zinc-100 bg-white px-4 py-3 dark:border-zinc-700/50 dark:bg-zinc-800">
               <div className="flex items-center gap-2">
                 <div className="flex size-7 items-center justify-center rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
                   <GearIcon weight="bold" className="size-3.5" />
@@ -124,12 +130,12 @@ export function SettingsPanel({ open, onClose, initialTab = "appearance", onTabC
               type="button"
               aria-label="关闭设置"
               onClick={onClose}
-              className="absolute right-3 top-3 z-10 hidden size-8 items-center justify-center rounded-full bg-zinc-900/5 text-zinc-500 backdrop-blur transition-colors hover:bg-zinc-900/10 hover:text-zinc-900 dark:bg-white/10 dark:text-zinc-400 dark:hover:bg-white/15 dark:hover:text-zinc-100 md:flex"
+              className="absolute right-3 top-3 z-10 hidden size-8 items-center justify-center rounded-full bg-zinc-900/5 text-zinc-500 transition-colors hover:bg-zinc-900/10 hover:text-zinc-900 dark:bg-white/10 dark:text-zinc-400 dark:hover:bg-white/15 dark:hover:text-zinc-100 md:flex"
             >
               <XIcon weight="bold" className="size-4" />
             </button>
 
-            <aside className="flex w-full shrink-0 flex-col border-zinc-900/5 bg-white/30 backdrop-blur dark:border-white/10 dark:bg-zinc-900/20 md:w-[220px] md:border-r max-md:border-b-0 max-md:py-0">
+            <aside className="flex w-full shrink-0 flex-col border-zinc-900/5 bg-white/80 dark:border-white/10 dark:bg-zinc-900/40 md:w-[220px] md:border-r max-md:border-b-0 max-md:py-0">
               <div className="hidden items-center gap-2 px-4 pb-3 pt-4 md:flex">
                 <div className="flex size-8 items-center justify-center rounded-xl bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
                   <GearIcon weight="bold" className="size-4" />
@@ -158,9 +164,9 @@ export function SettingsPanel({ open, onClose, initialTab = "appearance", onTabC
               </nav>
             </aside>
 
-            <div className="flex min-h-0 flex-1 flex-col bg-white/55 backdrop-blur dark:bg-zinc-900/10">
+            <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-zinc-900">
               {/* 固定标题区 */}
-              <div className="shrink-0 border-b border-white/40 bg-white/40 px-6 py-4 backdrop-blur dark:border-white/10 dark:bg-zinc-800/40 md:px-7 md:py-5">
+              <div className="shrink-0 border-b border-zinc-100 bg-white px-6 py-4 dark:border-zinc-700/50 dark:bg-zinc-800 md:px-7 md:py-5">
                 <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
                   {TABS.find((t) => t.id === active)?.label}
                 </h2>
@@ -173,7 +179,7 @@ export function SettingsPanel({ open, onClose, initialTab = "appearance", onTabC
                   {active === "about" && "关于本项目"}
                 </p>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto p-6 md:p-7">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6 pt-0 md:px-7 md:pb-7 md:pt-0" style={{ contain: "paint" }}>
                 <AnimatePresence mode="wait" initial={false}>
                   <motion.div
                     key={active}
@@ -201,7 +207,7 @@ export function SettingsPanel({ open, onClose, initialTab = "appearance", onTabC
 
 function Section({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-2xl border border-white/40 bg-white p-4 shadow-sm md:p-5 dark:border-zinc-700/50 dark:bg-zinc-800">
+    <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm md:p-5 dark:border-zinc-700/50 dark:bg-zinc-800">
       <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{title}</h3>
       {desc && <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{desc}</p>}
       <div className="mt-4">{children}</div>
@@ -390,6 +396,7 @@ function AppearancePane() {
 function WallpaperPane() {
   const [curr, setCurr] = useState<WallpaperValue>(() => getWallpaper());
   const [history, setHistory] = useState<string[]>(() => getWallpaperHistory());
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   useEffect(() => {
     setCurr(getWallpaper());
@@ -445,14 +452,11 @@ function WallpaperPane() {
 
   const [bingList, setBingList] = useState<string[]>([]);
   const [bingLoading, setBingLoading] = useState(false);
-  const [bingPage, setBingPage] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const listRef = useRef<HTMLDivElement>(null);
 
-  const loadBing = (page: number, append = false) => {
-    if (bingLoading) return;
+  useEffect(() => {
+    let cancelled = false;
     setBingLoading(true);
-    const idxs = Array.from({ length: 12 }, (_, i) => page * 12 + i);
+    const idxs = Array.from({ length: 8 }, (_, i) => i);
     Promise.all(
       idxs.map((idx) =>
         fetch(`https://bing.biturl.top/?resolution=UHD&format=json&index=${idx}&mkt=zh-CN`)
@@ -462,40 +466,17 @@ function WallpaperPane() {
       ),
     )
       .then((urls) => {
+        if (cancelled) return;
         const filtered = (urls.filter(Boolean) as string[]).filter((u, i, arr) => arr.indexOf(u) === i);
-        // 去重：过滤已在列表中的重复图
-        setBingList((prev) => {
-          const deduped = filtered.filter((u) => !prev.includes(u));
-          if (!deduped.length) {
-            setHasMore(false);
-            return prev;
-          }
-          return append ? [...prev, ...deduped] : deduped;
-        });
-        if (!filtered.length) setHasMore(false);
+        setBingList(filtered.slice(0, 8));
       })
-      .finally(() => setBingLoading(false));
-  };
-
-  useEffect(() => {
-    loadBing(0, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      .finally(() => {
+        if (!cancelled) setBingLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
-  const onScrollBing = () => {
-    const el = listRef.current;
-    if (!el || bingLoading || !hasMore) return;
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 80) {
-      const next = bingPage + 1;
-      setBingPage(next);
-    }
-  };
-
-  useEffect(() => {
-    if (bingPage === 0) return;
-    loadBing(bingPage, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bingPage]);
 
   return (
     <div className="space-y-4">
@@ -503,7 +484,7 @@ function WallpaperPane() {
       <div className="overflow-hidden rounded-2xl border border-white/40 bg-zinc-900 shadow-sm">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={curr.url} alt="当前壁纸预览" className="h-40 w-full object-cover sm:h-48" loading="eager" />
-        <div className="flex items-center justify-between bg-white/90 px-3 py-2 text-xs backdrop-blur dark:bg-zinc-800/90">
+        <div className="flex items-center justify-between bg-white px-3 py-2 text-xs dark:bg-zinc-800">
           <span className="font-medium text-zinc-700 dark:text-zinc-300">当前预览</span>
           <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-[11px] font-medium text-white dark:bg-white dark:text-zinc-900">{curr.type}</span>
         </div>
@@ -535,50 +516,42 @@ function WallpaperPane() {
       </Section>
 
       <Section title="必应壁纸列表">
-        <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">点击直接设为壁纸。</p>
-        <div ref={listRef} onScroll={onScrollBing} className="max-h-52 overflow-y-auto rounded-xl border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-700 dark:bg-zinc-800 sm:max-h-64">
-          {bingList.length ? (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {bingList.map((url) => {
-                const active = curr.url === url;
-                return (
-                  <button
-                    key={url}
-                    type="button"
-                    onClick={() => {
-                      const v: WallpaperValue = { type: "bing", url };
-                      setWallpaper(v);
-                      setCurr(v);
-                    }}
-                    className={`group relative overflow-hidden rounded-xl border-2 transition-all ${active ? "border-zinc-900 dark:border-white" : "border-transparent hover:border-zinc-300 dark:hover:border-zinc-600"}`}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={url} alt="Bing" className="aspect-[16/10] w-full object-cover" loading="lazy" />
-                    {active && (
-                      <span className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
-                        <CheckIcon weight="bold" className="size-3" />
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-          {bingLoading && (
-            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="aspect-[16/10] animate-pulse rounded-xl bg-zinc-100" />
-              ))}
-            </div>
-          )}
-          {!bingLoading && hasMore && bingList.length > 0 && (
-            <button type="button" onClick={() => setBingPage((p) => p + 1)} className="mt-3 w-full rounded-xl border border-zinc-200 bg-white py-2 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600">
-              加载更多
-            </button>
-          )}
-          {!bingLoading && !hasMore && bingList.length > 0 && <p className="mt-2 text-center text-xs text-zinc-400 dark:text-zinc-500">已加载全部</p>}
-          {!bingLoading && !bingList.length && <p className="text-xs text-zinc-500 dark:text-zinc-400">加载失败，请稍后重试。</p>}
-        </div>
+        <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">精选 8 张，点击直接设为壁纸。</p>
+        {bingLoading ? (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="aspect-[16/10] animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-700" />
+            ))}
+          </div>
+        ) : bingList.length ? (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {bingList.map((url) => {
+              const active = curr.url === url;
+              return (
+                <button
+                  key={url}
+                  type="button"
+                  onClick={() => {
+                    const v: WallpaperValue = { type: "bing", url };
+                    setWallpaper(v);
+                    setCurr(v);
+                  }}
+                  className={`group relative overflow-hidden rounded-xl border-2 transition-all ${active ? "border-zinc-900 dark:border-white" : "border-transparent hover:border-zinc-300 dark:hover:border-zinc-600"}`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={url} alt="Bing" className="aspect-[16/10] w-full object-cover" loading="lazy" decoding="async" />
+                  {active && (
+                    <span className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
+                      <CheckIcon weight="bold" className="size-3" />
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">加载失败，请稍后重试。</p>
+        )}
       </Section>
 
       <Section title="壁纸历史" desc={history.length ? `已保存 ${history.length} / 30 张（去重）` : "暂无历史"}>
@@ -600,7 +573,7 @@ function WallpaperPane() {
                       className={`relative flex aspect-[16/10] w-full overflow-hidden rounded-xl border-2 bg-zinc-100 transition-all dark:bg-zinc-800 ${active ? "border-zinc-900 dark:border-white" : "border-transparent hover:border-zinc-300 dark:hover:border-zinc-600"}`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={url} alt="历史壁纸" className="h-full w-full object-cover" loading="lazy" />
+                      <img src={url} alt="历史壁纸" className="h-full w-full object-cover" loading="lazy" decoding="async" />
                       {active && (
                         <span className="absolute left-1 top-1 flex size-5 items-center justify-center rounded-full bg-zinc-900 text-white shadow dark:bg-white dark:text-zinc-900">
                           <CheckIcon weight="bold" className="size-3" />
@@ -625,9 +598,7 @@ function WallpaperPane() {
             <div className="flex items-center justify-between">
               <button
                 type="button"
-                onClick={() => {
-                  if (confirm("确定清空壁纸历史？")) clearWallpaperHistory();
-                }}
+                onClick={() => setShowClearConfirm(true)}
                 className="text-xs font-medium text-zinc-500 hover:text-red-600 dark:text-zinc-400 dark:hover:text-red-400"
               >
                 清空历史
@@ -639,6 +610,18 @@ function WallpaperPane() {
           <p className="py-4 text-center text-xs text-zinc-500 dark:text-zinc-400">暂无历史，设置壁纸后自动记录（去重，最多 30 张）</p>
         )}
       </Section>
+      <ConfirmModal
+        open={showClearConfirm}
+        onClose={() => setShowClearConfirm(false)}
+        title="清空壁纸历史"
+        description="确定清空壁纸历史？此操作不可撤销。"
+        confirmText="清空"
+        danger
+        onConfirm={() => {
+          clearWallpaperHistory();
+          message.success("已清空");
+        }}
+      />
     </div>
   );
 }
@@ -676,6 +659,7 @@ function SearchPane() {
     const v = localStorage.getItem("startpage:showSearchHistory");
     return v === null ? true : v === "true";
   });
+  const [pendingDeleteEngine, setPendingDeleteEngine] = useState<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem("startpage:showSearchHistory", String(showHistory));
@@ -718,17 +702,18 @@ function SearchPane() {
 
   const addEngine = () => {
     if (!newEngine.label.trim() || !newEngine.url.trim()) {
-      alert("请填写名称与 URL（需含 {q}）");
+      message.warning("请填写名称与 URL（需含 {q}）");
       return;
     }
     if (!newEngine.url.includes("{q}")) {
-      alert("URL 需包含 {q} 占位");
+      message.warning("URL 需包含 {q} 占位");
       return;
     }
     const id = `custom_${Date.now()}`;
     const e: SearchEngine = { id, label: newEngine.label.trim(), url: newEngine.url.trim(), icon: (newEngine.icon.trim() || newEngine.label.trim().slice(0, 1)).slice(0, 2), color: "#18181b" };
     persistEngines([...engines, e]);
     setNewEngine({ label: "", url: "", icon: "" });
+    message.success("已添加搜索引擎");
   };
 
   const startEdit = (e: SearchEngine) => {
@@ -739,23 +724,31 @@ function SearchPane() {
   const saveEdit = () => {
     if (!editing) return;
     if (!editVal.label.trim() || !editVal.url.trim() || !editVal.url.includes("{q}")) {
-      alert("请检查名称与 URL（需含 {q}）");
+      message.warning("请检查名称与 URL（需含 {q}）");
       return;
     }
     const next = engines.map((x) => (x.id === editing ? { ...x, label: editVal.label.trim(), url: editVal.url.trim(), icon: (editVal.icon.trim() || editVal.label.trim().slice(0, 1)).slice(0, 2) } : x));
     persistEngines(next);
     setEditing(null);
+    message.success("已保存");
   };
 
   const removeEngine = (id: string) => {
     if (engines.length <= 1) {
-      alert("至少保留一个搜索引擎");
+      message.warning("至少保留一个搜索引擎");
       return;
     }
-    if (!confirm("确定删除该搜索引擎？")) return;
+    setPendingDeleteEngine(id);
+  };
+
+  const confirmRemoveEngine = () => {
+    if (!pendingDeleteEngine) return;
+    const id = pendingDeleteEngine;
     const next = engines.filter((x) => x.id !== id);
     persistEngines(next);
     if (engineId === id) pickEngine(next[0].id);
+    setPendingDeleteEngine(null);
+    message.success("已删除");
   };
 
   const clearHistory = () => {
@@ -887,6 +880,15 @@ function SearchPane() {
           <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">暂无历史，搜索后自动记录（最多 20 条）。</p>
         )}
       </Section>
+      <ConfirmModal
+        open={!!pendingDeleteEngine}
+        onClose={() => setPendingDeleteEngine(null)}
+        title="删除搜索引擎"
+        description="确定删除该搜索引擎？"
+        confirmText="删除"
+        danger
+        onConfirm={confirmRemoveEngine}
+      />
     </div>
   );
 }
@@ -908,14 +910,61 @@ function IconsPane() {
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
+  const [showAddGroup, setShowAddGroup] = useState(false);
+  const [newGroupTitle, setNewGroupTitle] = useState("");
+  const [pendingDeleteGroupIdx, setPendingDeleteGroupIdx] = useState<number | null>(null);
+  const [addIconGroupId, setAddIconGroupId] = useState<string | null>(null);
+  const [editIcon, setEditIcon] = useState<{ groupId: string; shortcut: Shortcut } | null>(null);
+  const [deleteIcon, setDeleteIcon] = useState<{ groupId: string; shortcut: Shortcut } | null>(null);
+  const gridRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   useEffect(() => {
     localStorage.setItem("startpage:groups", JSON.stringify(groups));
-    // 同步扁平 items 供 AppGrid 读取
     const flat = groups.flatMap((g) => g.shortcuts);
     localStorage.setItem("startpage:items", JSON.stringify(flat));
     window.dispatchEvent(new Event("groups-change"));
   }, [groups]);
+
+  // 拖拽排序（仅桌面）：每分组内图标可拖拽重排
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const isCoarse = window.matchMedia("(pointer: coarse)").matches;
+      const isNarrow = window.matchMedia("(max-width: 768px)").matches;
+      if (isCoarse || isNarrow) return;
+    }
+    const sortables: Sortable[] = [];
+    gridRefs.current.forEach((el, gid) => {
+      if (!el) return;
+      const s = Sortable.create(el, {
+        animation: 150,
+        draggable: "[data-icon]",
+        dataIdAttr: "data-id",
+        ghostClass: "opacity-40",
+        chosenClass: "scale-[0.96]",
+        dragClass: "opacity-90",
+        onEnd: (evt) => {
+          const { oldIndex, newIndex } = evt;
+          if (oldIndex == null || newIndex == null || oldIndex === newIndex) return;
+          setGroups((prev) => {
+            const gi = prev.findIndex((g) => g.id === gid);
+            if (gi === -1) return prev;
+            const g = prev[gi];
+            const nextShortcuts = [...g.shortcuts];
+            const [moved] = nextShortcuts.splice(oldIndex, 1);
+            nextShortcuts.splice(newIndex, 0, moved);
+            const next = [...prev];
+            next[gi] = { ...g, shortcuts: nextShortcuts };
+            // 同步到 items 的持久化由上方的 groups effect 完成
+            return next;
+          });
+        },
+      });
+      sortables.push(s);
+    });
+    return () => {
+      sortables.forEach((s) => s.destroy());
+    };
+  }, [groups.map((g) => g.id).join(","), groups.length]);
 
   const moveGroup = (idx: number, dir: -1 | 1) => {
     const next = [...groups];
@@ -926,15 +975,28 @@ function IconsPane() {
     setGroups(next);
   };
 
-  const removeGroup = (idx: number) => {
-    if (!confirm(`确定删除分组“${groups[idx].title}”？`)) return;
+  const confirmRemoveGroup = () => {
+    if (pendingDeleteGroupIdx === null) return;
+    const idx = pendingDeleteGroupIdx;
     setGroups((prev) => prev.filter((_, i) => i !== idx));
+    setPendingDeleteGroupIdx(null);
+    message.success("已删除分组");
   };
 
-  const addGroup = () => {
-    const title = prompt("新分组名");
-    if (!title?.trim()) return;
-    setGroups((prev) => [...prev, { id: `g_${Date.now()}`, title: title.trim(), shortcuts: [] }]);
+  const handleAddGroup = () => {
+    const t = newGroupTitle.trim();
+    if (!t) {
+      message.warning("请输入分组名");
+      return;
+    }
+    if (groups.some((g) => g.title === t)) {
+      message.warning("分组名已存在");
+      return;
+    }
+    setGroups((prev) => [...prev, { id: `g_${Date.now()}`, title: t, shortcuts: [] }]);
+    setNewGroupTitle("");
+    setShowAddGroup(false);
+    message.success("已新建分组");
   };
 
   const startEdit = (g: Group) => {
@@ -943,20 +1005,51 @@ function IconsPane() {
   };
 
   const saveEdit = () => {
-    if (!editingId || !editTitle.trim()) return;
+    if (!editingId || !editTitle.trim()) {
+      message.warning("请输入分组名");
+      return;
+    }
     setGroups((prev) => prev.map((x) => (x.id === editingId ? { ...x, title: editTitle.trim() } : x)));
     setEditingId(null);
+    message.success("已保存");
+  };
+
+  const handleAddIcon = (data: { name: string; url: string }) => {
+    if (!addIconGroupId) return;
+    const idx = groups.findIndex((g) => g.id === addIconGroupId);
+    if (idx === -1) return;
+    const { next } = addShortcut(groups, idx, data);
+    setGroups(next);
+    saveGroups(next);
+    setAddIconGroupId(null);
+  };
+
+  const handleEditIcon = (data: { name: string; url: string }) => {
+    if (!editIcon) return;
+    const next = updateShortcut(groups, editIcon.shortcut.id, data);
+    setGroups(next);
+    saveGroups(next);
+    setEditIcon(null);
+  };
+
+  const handleDeleteIcon = () => {
+    if (!deleteIcon) return;
+    const next = removeShortcut(groups, deleteIcon.shortcut.id);
+    setGroups(next);
+    saveGroups(next);
+    setDeleteIcon(null);
+    message.success("已删除");
   };
 
   return (
     <div className="space-y-4">
       <div className="space-y-4">
         {groups.map((g, gi) => (
-          <section key={g.id} className="rounded-2xl border border-white/40 bg-white p-3 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-800">
+          <section key={g.id} className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-700/50 dark:bg-zinc-800">
             <div className="group flex items-center gap-2">
               {editingId === g.id ? (
                 <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" autoFocus />
+                  <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder="分组名" className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" autoFocus onKeyDown={(e) => e.key === "Enter" && saveEdit()} />
                   <button type="button" onClick={saveEdit} className="shrink-0 rounded-full bg-zinc-900 px-3 py-1 text-xs font-medium text-white dark:bg-white dark:text-zinc-900">
                     保存
                   </button>
@@ -979,36 +1072,87 @@ function IconsPane() {
                     <button type="button" onClick={() => moveGroup(gi, 1)} disabled={gi === groups.length - 1} className="flex size-7 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600 disabled:opacity-40">
                       <CaretDownIcon weight="bold" className="size-3.5" />
                     </button>
-                    <button type="button" onClick={() => removeGroup(gi)} className="flex size-7 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:bg-zinc-800 dark:text-red-400 dark:hover:bg-red-500/10">
+                    <button type="button" onClick={() => setPendingDeleteGroupIdx(gi)} className="flex size-7 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:bg-zinc-800 dark:text-red-400 dark:hover:bg-red-500/10">
                       <TrashIcon weight="bold" className="size-3.5" />
                     </button>
                   </div>
                 </>
               )}
             </div>
-            <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+            <div
+              ref={(el) => {
+                if (el) gridRefs.current.set(g.id, el);
+                else gridRefs.current.delete(g.id);
+              }}
+              className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6"
+            >
               {g.shortcuts.map((s) => (
-                <div key={s.id} data-draggable data-id={s.id} className="group/item flex flex-col items-center gap-1 rounded-xl border border-transparent p-2 hover:border-zinc-200 hover:bg-zinc-50 dark:hover:border-zinc-600 dark:hover:bg-zinc-700/50">
+                <div
+                  key={s.id}
+                  data-icon
+                  data-id={s.id}
+                  onClick={() => setEditIcon({ groupId: g.id, shortcut: s })}
+                  className="group/item relative flex cursor-grab flex-col items-center gap-1 rounded-xl border border-transparent p-2 hover:border-zinc-200 hover:bg-zinc-50 active:cursor-grabbing dark:hover:border-zinc-600 dark:hover:bg-zinc-700/50"
+                >
                   <span className="flex size-10 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-700 dark:ring-zinc-600">
                     <span className="text-xs font-bold text-zinc-700 dark:text-zinc-200">{s.name.slice(0, 1)}</span>
                   </span>
                   <span className="line-clamp-1 w-full truncate text-center text-xs text-zinc-600 dark:text-zinc-400">{s.name}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteIcon({ groupId: g.id, shortcut: s });
+                    }}
+                    className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-white text-zinc-400 shadow ring-1 ring-black/5 opacity-100 transition-opacity hover:bg-zinc-900 hover:text-white dark:bg-zinc-700 dark:text-zinc-400 dark:ring-white/10 md:opacity-0 md:group-hover/item:opacity-100"
+                    aria-label={`删除 ${s.name}`}
+                  >
+                    <XIcon weight="bold" className="size-3" />
+                  </button>
                 </div>
               ))}
-              {g.shortcuts.length === 0 && <p className="col-span-full py-6 text-center text-xs text-zinc-400 dark:text-zinc-500">暂无图标，拖拽或新建添加</p>}
+              <button
+                type="button"
+                onClick={() => setAddIconGroupId(g.id)}
+                aria-label="添加图标"
+                className="flex flex-col items-center justify-center gap-1 rounded-xl p-2 hover:bg-zinc-50 dark:hover:bg-zinc-700/30"
+              >
+                <span className="flex size-10 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-700 dark:ring-zinc-600">
+                  <PlusIcon weight="bold" className="size-4 text-zinc-400 dark:text-zinc-400" />
+                </span>
+                <span className="block h-[14px] w-full" aria-hidden />
+              </button>
+              {g.shortcuts.length === 0 && (
+                <p className="col-span-full py-2 text-center text-xs text-zinc-400 dark:text-zinc-500">点击添加图标</p>
+              )}
             </div>
           </section>
         ))}
       </div>
-      <button type="button" onClick={addGroup} className="flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-zinc-300 bg-white/60 px-4 py-3 text-sm font-medium text-zinc-600 hover:bg-white dark:border-zinc-600 dark:bg-zinc-800/50 dark:text-zinc-300 dark:hover:bg-zinc-800">
+      <button type="button" onClick={() => setShowAddGroup(true)} className="flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-zinc-300 bg-white/60 px-4 py-3 text-sm font-medium text-zinc-600 hover:bg-white dark:border-zinc-600 dark:bg-zinc-800/50 dark:text-zinc-300 dark:hover:bg-zinc-800">
         <PlusIcon weight="bold" className="size-4" /> 新建分组
       </button>
-      <p className="text-xs text-zinc-500 dark:text-zinc-400">图标新增/编辑/删除后续接入弹窗与跨组拖拽落盘。</p>
+
+      <Modal open={showAddGroup} onClose={() => setShowAddGroup(false)} title="新建分组" width={400} footer={
+        <>
+          <button type="button" onClick={() => setShowAddGroup(false)} className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">取消</button>
+          <button type="button" onClick={handleAddGroup} className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-900">新建</button>
+        </>
+      }>
+        <input value={newGroupTitle} onChange={(e) => setNewGroupTitle(e.target.value)} placeholder="分组名" autoFocus onKeyDown={(e) => e.key === "Enter" && handleAddGroup()} className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
+      </Modal>
+
+      <ConfirmModal open={pendingDeleteGroupIdx !== null} onClose={() => setPendingDeleteGroupIdx(null)} title="删除分组" description={pendingDeleteGroupIdx !== null ? `确定删除分组“${groups[pendingDeleteGroupIdx]?.title}”？分组内的图标将一并删除。` : undefined} confirmText="删除" danger onConfirm={confirmRemoveGroup} />
+
+      <IconFormModal open={!!addIconGroupId} onClose={() => setAddIconGroupId(null)} mode="add" onSubmit={handleAddIcon} />
+      <IconFormModal open={!!editIcon} onClose={() => setEditIcon(null)} mode="edit" initialData={editIcon ? { name: editIcon.shortcut.name, url: editIcon.shortcut.url } : undefined} onSubmit={handleEditIcon} />
+      <ConfirmModal open={!!deleteIcon} onClose={() => setDeleteIcon(null)} title="删除图标" description={deleteIcon ? `确定删除“${deleteIcon.shortcut.name}”？` : undefined} confirmText="删除" danger onConfirm={handleDeleteIcon} />
     </div>
   );
 }
 
 function DataPane() {
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const exportJson = () => {
     const payload: Record<string, unknown> = { at: new Date().toISOString(), version: 1 };
     const keys = ["startpage:wallpaper", "startpage:wallpaperHistory", "startpage:items", "startpage:groups", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness", "startpage:wallpaperBlur"];
@@ -1032,6 +1176,7 @@ function DataPane() {
     a.download = `start-page-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    message.success("已导出");
   };
 
   const importJson = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1055,18 +1200,27 @@ function DataPane() {
           window.dispatchEvent(new Event("search-history-change"));
           window.dispatchEvent(new Event("engine-change"));
           window.dispatchEvent(new Event("groups-change"));
-          alert("已导入，刷新后生效");
+          message.success("已导入，刷新后生效");
         } else {
           const toSave = (j as { groups?: unknown }).groups ?? j;
           localStorage.setItem("startpage:items", JSON.stringify(toSave));
-          alert("已导入（兼容模式），刷新后生效");
+          message.success("已导入（兼容模式），刷新后生效");
         }
       } catch {
-        alert("JSON 解析失败");
+        message.error("JSON 解析失败");
       }
     };
     reader.readAsText(f);
     e.target.value = "";
+  };
+
+  const doReset = () => {
+    for (const k of ["startpage:groups", "startpage:items", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:wallpaper", "startpage:wallpaperHistory", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness", "startpage:wallpaperBlur"]) {
+      localStorage.removeItem(k);
+    }
+    localStorage.removeItem("startpage:glassBlur");
+    localStorage.removeItem("startpage:wallpaperBaseBlur");
+    location.reload();
   };
 
   return (
@@ -1087,124 +1241,48 @@ function DataPane() {
       <Section title="重置">
         <button
           type="button"
-          onClick={() => {
-            if (confirm("确定恢复默认？此操作将清空本地数据并刷新。")) {
-              for (const k of ["startpage:groups", "startpage:items", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:wallpaper", "startpage:wallpaperHistory", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness", "startpage:wallpaperBlur"]) {
-                localStorage.removeItem(k);
-              }
-              // 清理已废弃的玻璃模糊与 baseBlur 键
-              localStorage.removeItem("startpage:glassBlur");
-              localStorage.removeItem("startpage:wallpaperBaseBlur");
-              location.reload();
-            }
-          }}
+          onClick={() => setShowResetConfirm(true)}
           className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
         >
           恢复默认
         </button>
       </Section>
+      <ConfirmModal open={showResetConfirm} onClose={() => setShowResetConfirm(false)} title="恢复默认" description="确定恢复默认？此操作将清空本地数据并刷新。" confirmText="恢复" danger onConfirm={doReset} />
     </div>
   );
 }
 
 function AboutPane() {
   return (
-    <div className="space-y-6">
-      {/* 项目介绍 */}
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <div className="h-px flex-1 bg-gradient-to-r from-transparent to-zinc-200 dark:to-zinc-700" />
-          <span className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-semibold tracking-wide text-white dark:bg-white dark:text-zinc-900">项目介绍</span>
-          <div className="h-px flex-1 bg-gradient-to-l from-transparent to-zinc-200 dark:to-zinc-700" />
-        </div>
-
-        <Section title="拾玖起始页 · shijiu-start-page" desc="一个纯前端、极简、本地优先的浏览器起始页">
-          <div className="space-y-3 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
-            <p>
-              UI 与交互灵感来自
-              <a href="https://www.limestart.cn" target="_blank" rel="noopener noreferrer" className="mx-1 font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-700 dark:text-zinc-100 dark:decoration-zinc-600">青柠起始页</a>
-              与
-              <a href="https://nbtab.com" target="_blank" rel="noopener noreferrer" className="mx-1 font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-700 dark:text-zinc-100 dark:decoration-zinc-600">NBTab</a>
-              ，单页承载时间、搜索、一言、壁纸、宫格与 Dock，注重<span className="font-medium text-zinc-900 dark:text-zinc-100">留白、玻璃拟态与弹簧动效</span>，开箱即用，持续迭代中。
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {["Next.js 16.3", "React 19", "TypeScript strict", "Tailwind 3.4", "motion", "sortablejs", "phosphor-icons"].map((t) => (
-                <span key={t} className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-                  {t}
-                </span>
-              ))}
-            </div>
-          </div>
-        </Section>
-
-        <Section title="设计与特性" desc="玻璃拟态 · 弹簧曲线 · 深浅自适应">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {[
-              { k: "视觉", v: "玻璃拟态 --glass-bg / --glass-blur，毛玻璃统一驱动搜索与 Dock" },
-              { k: "动效", v: "弹簧曲线 --spring (0.22,1,0.36,1) 贯穿 CSS 与 motion" },
-              { k: "壁纸", v: "默认 / Bing 每日 4K / 随机风景，去重历史 30 张" },
-              { k: "隐私", v: "零后端，全部 localStorage，支持 JSON 导出/导入" },
-            ].map((it) => (
-              <div key={it.k} className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/60">
-                <div className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">{it.k}</div>
-                <div className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{it.v}</div>
-              </div>
-            ))}
-          </div>
-        </Section>
+    <div className="space-y-3">
+      <div className="pb-1 pt-1 text-center">
+        <h3 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">拾玖起始页 · shijiu-start-page</h3>
+        <p className="mt-0.5 text-xs tracking-wide text-zinc-500 dark:text-zinc-400">开源 · 极简 · 本地优先</p>
       </div>
 
-      {/* 使用指南 */}
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <div className="h-px flex-1 bg-gradient-to-r from-transparent to-zinc-200 dark:to-zinc-700" />
-          <span className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-semibold tracking-wide text-white dark:bg-white dark:text-zinc-900">使用指南</span>
-          <div className="h-px flex-1 bg-gradient-to-l from-transparent to-zinc-200 dark:to-zinc-700" />
-        </div>
+      <Section title="使用方式" desc="右键进宫格 · 左键回首页 · Esc 关闭">
+        <ul className="space-y-1.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+          <li>• <span className="font-medium text-zinc-900 dark:text-zinc-100">右键</span>点击壁纸空白处进入宫格，<span className="font-medium text-zinc-900 dark:text-zinc-100">左键</span>点击壁纸空白处返回首页</li>
+          <li>• 宫格内点击图标新标签打开；支持分组切换与桌面拖拽排序</li>
+          <li>• 任何弹窗/宫格按 <span className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs dark:bg-zinc-800">Esc</span> 快速关闭</li>
+          <li>• 移动端：宫格内<span className="font-medium text-zinc-900 dark:text-zinc-100">上下滑动翻页、左右滑动切换分组</span>；图标<span className="font-medium text-zinc-900 dark:text-zinc-100">长按</span>唤起菜单支持编辑/删除，桌面支持拖拽排序</li>
+        </ul>
+      </Section>
 
-        <Section title="基础交互" desc="右键进宫格 · 左键回首页 · Esc 关闭">
-          <ul className="space-y-1.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
-            <li>• <span className="font-medium text-zinc-900 dark:text-zinc-100">右键</span>点击壁纸空白处进入宫格，<span className="font-medium text-zinc-900 dark:text-zinc-100">左键</span>点击壁纸空白处返回首页</li>
-            <li>• 宫格内点击图标新标签打开；支持分组切换与桌面拖拽排序</li>
-            <li>• 任何弹窗/宫格按 <span className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs dark:bg-zinc-800">Esc</span> 快速关闭</li>
-          </ul>
-        </Section>
+      <Section title="数据与声明" desc="本地优先 · 开源免费">
+        <ul className="space-y-1.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+          <li>• 本站不保存任何数据，所有数据仅存于浏览器 <span className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-xs dark:bg-zinc-800">localStorage</span>，无云同步；可在 <span className="font-medium text-zinc-900 dark:text-zinc-100">设置-数据</span> 导出 JSON 备份，换设备导入即可</li>
+          <li>• 壁纸均来源于网络，随机壁纸为 API 调用，本站不对壁纸内容负责</li>
+        </ul>
+      </Section>
 
-        <Section title="搜索与壁纸" desc="可深度自定义">
-          <ul className="space-y-1.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
-            <li>• 搜索：聚焦显一言，可切换/新增/编辑搜索引擎，回车或点击搜索，输入 URL 直达</li>
-            <li>• 壁纸：精选默认、Bing 每日 4K、随机风景；历史自动记录（去重，上限 30），缩略图点击切换，右上角 × 删除</li>
-            <li>• 外观：主题（跟随系统/浅/深）、毛玻璃透明度 0-80、亮度 70-120、遮罩模糊 0-100</li>
-          </ul>
-        </Section>
-
-        <Section title="图标宫格" desc="桌面拖拽 · 移动端上下/左右滑动">
-          <ul className="space-y-1.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
-            <li>• 宫格内<span className="font-medium text-zinc-900 dark:text-zinc-100">上下滑动翻阅菜单</span>，<span className="font-medium text-zinc-900 dark:text-zinc-100">左右滑动切换分组</span>；PC 端在图标区外纵向滚轮切换分组</li>
-            <li>• 桌面支持拖拽排序，移动端自动禁用拖拽以保证滚动流畅；分组在<span className="font-medium text-zinc-900 dark:text-zinc-100">设置-图标</span>中新增/重命名/上下移/删除</li>
-          </ul>
-        </Section>
-
-        <Section title="数据与声明" desc="本地优先 · 开源免费">
-          <ul className="space-y-1.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
-            <li>• 本站不保存任何数据，所有数据仅存于浏览器 <span className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-xs dark:bg-zinc-800">localStorage</span>，无云同步；可在 <span className="font-medium text-zinc-900 dark:text-zinc-100">设置-数据</span> 导出 JSON 备份，换设备导入即可</li>
-            <li>• 壁纸均来源于网络，随机壁纸为 API 调用，本站不对壁纸内容负责</li>
-            <li className="flex flex-wrap items-center gap-1.5">
-              <span>• 开源地址：</span>
-              <a href="https://github.com/shijiukaguyahime/shijiu-start-page" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100 cursor-pointer">
-                GitHub · 点个 Star
-              </a>
-              <span>· 博客：</span>
-              <a href="https://shijiucode.cn" target="_blank" rel="noopener noreferrer" className="font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-700 dark:text-zinc-100 dark:decoration-zinc-600 cursor-pointer">shijiucode.cn</a>
-            </li>
-          </ul>
-        </Section>
-      </div>
-
-      <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/60 p-4 text-center dark:border-zinc-700 dark:bg-zinc-800/30">
-        <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300">开源 · 极简 · 本地优先</p>
-        <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">喜欢就点个 Star，持续迭代中 — 感谢使用拾玖起始页</p>
-      </div>
+      <p className="pt-1 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+        喜欢就star支持一下吧
+        <a href="https://github.com/shijiukaguyahime/shijiu-start-page" target="_blank" rel="noopener noreferrer" className="mx-1 font-medium text-zinc-400 underline decoration-zinc-300 underline-offset-2 transition-colors hover:text-zinc-600 dark:text-zinc-500 dark:decoration-zinc-600">GitHub</a>
+        <span className="mx-1 text-zinc-300 dark:text-zinc-600">|</span>
+        博客：
+        <a href="https://shijiucode.cn" target="_blank" rel="noopener noreferrer" className="font-medium text-zinc-400 underline decoration-zinc-300 underline-offset-2 transition-colors hover:text-zinc-600 dark:text-zinc-500 dark:decoration-zinc-600">shijiucode.cn</a>
+      </p>
     </div>
   );
 }

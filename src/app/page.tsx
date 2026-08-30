@@ -9,6 +9,7 @@ import { Hitokoto } from "@/components/hitokoto";
 import { AppGrid } from "@/components/app-grid";
 import { SettingsPanel } from "@/components/settings-panel";
 import { DEFAULT_GROUPS, type Group } from "@/lib/data";
+import { MessageHost } from "@/components/ui/message";
 
 export default function Home() {
   const [now, setNow] = useState<Date | null>(null);
@@ -124,10 +125,11 @@ export default function Home() {
       className="relative flex min-h-[100dvh] flex-col"
       onContextMenu={(e) => {
         e.preventDefault();
+        const target = e.target as HTMLElement;
+        if (target.closest("[data-modal]")) return;
         if (settingsOpen) return;
         if (showGrid) return;
         if (searchFocused) return;
-        const target = e.target as HTMLElement;
         // 仅当一言可见时才拦截其区域的右键；隐藏时允许穿透到壁纸以打开宫格（修复 display/visibility 导致的误拦截）
         if (
           target.closest("[data-search]") ||
@@ -141,9 +143,10 @@ export default function Home() {
         setShowGrid(true);
       }}
       onClick={(e) => {
+        const target = e.target as HTMLElement;
+        if (target.closest("[data-modal]")) return;
         if (settingsOpen) return;
         if (!showGrid) return;
-        const target = e.target as HTMLElement;
         if (target.closest("[data-grid]") || target.closest("[data-dock]") || target.closest("[data-pagination]")) return;
         // 点击壁纸空白处回退
         setShowGrid(false);
@@ -240,7 +243,7 @@ export default function Home() {
                   className={
                     idx === gridGroupIdx
                       ? "h-2 w-6 rounded-full bg-white shadow-[0_1px_6px_rgba(0,0,0,0.25)] transition-all duration-300 ease-[var(--spring)]"
-                      : "size-2 rounded-full bg-white/45 backdrop-blur transition-all duration-300 ease-[var(--spring)] hover:bg-white/70"
+                      : "size-2 rounded-full bg-white/50 transition-all duration-300 ease-[var(--spring)] hover:bg-white/80"
                   }
                 />
                 <div
@@ -284,6 +287,7 @@ export default function Home() {
       </div>
 
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} initialTab={settingsTab} onTabChange={setSettingsTab} />
+      <MessageHost />
     </div>
   );
 }
