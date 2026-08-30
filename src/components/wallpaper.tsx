@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-const DEFAULT_WALLPAPER =
-  "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?q=80&w=2400&auto=format&fit=crop";
+const DEFAULT_WALLPAPER = "/default_bg.avif";
 export const WALLPAPER_KEY = "startpage:wallpaper";
 export const BING_WALLPAPER = "https://bing.biturl.top/?resolution=UHD&format=image&index=0&mkt=zh-CN";
 export const NATURE_WALLPAPER = "https://wp.upx8.com/api.php?category=nature";

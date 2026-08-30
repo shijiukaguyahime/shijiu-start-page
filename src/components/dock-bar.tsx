@@ -244,7 +244,7 @@ function DockIcon({
       return "";
     }
   })();
-  const favicon = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : null;
+  const favicon = domain ? `/api/favicon?domain=${encodeURIComponent(domain)}` : null;
 
   return (
     <div className="group/dock relative flex shrink-0">

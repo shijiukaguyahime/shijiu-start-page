@@ -9,6 +9,7 @@ import { DropdownMenu } from "@/components/ui/dropdown";
 import { IconFormModal } from "@/components/ui/icon-form-modal";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { message } from "@/components/ui/message";
+import { Favicon } from "@/components/ui/favicon";
 import {
   addShortcut,
   removeShortcut,
@@ -576,27 +577,6 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
         onConfirm={handleDelete}
       />
     </>
-  );
-}
-
-function Favicon({ url, name, color }: { url?: string; name: string; color?: string }) {
-  const [failed, setFailed] = useState(false);
-  const domain = (() => {
-    try {
-      return url ? new URL(url).hostname : "";
-    } catch {
-      return "";
-    }
-  })();
-  const src = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : null;
-  if (src && !failed) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={src} alt="" width={22} height={22} className="size-[22px] object-contain" loading="lazy" onError={() => setFailed(true)} />;
-  }
-  return (
-    <span className="flex size-7 items-center justify-center rounded-lg text-xs font-bold text-white" style={{ background: color ?? "#18181b" }}>
-      {name.charAt(0).toUpperCase()}
-    </span>
   );
 }
 

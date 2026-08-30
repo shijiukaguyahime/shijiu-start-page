@@ -437,8 +437,8 @@ function WallpaperPane() {
       return;
     }
     const map: Record<string, string> = {
-      default: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?q=80&w=2400&auto=format&fit=crop",
-      unsplash: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?q=80&w=2400&auto=format&fit=crop",
+      default: "/default_bg.avif",
+      unsplash: "/default_bg.avif",
       bing: BING_WALLPAPER,
       nature: NATURE_WALLPAPER,
     };

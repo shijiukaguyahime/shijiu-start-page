@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Start — 极简起始页",
-  description: "参考 limestart.cn 与 nbtab.com 的个人浏览器起始页。毛玻璃搜索、Dock 与平铺网格双模式，本地持久化。",
+  title: "拾玖起始页",
+  description: "拾玖起始页",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
