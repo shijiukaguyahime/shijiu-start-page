@@ -272,6 +272,8 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
     function onWheel(e: WheelEvent) {
       const target = e.target as HTMLElement;
       if (target.closest("[data-settings]")) return;
+      if (target.closest("[data-weather]") || target.closest("[data-calendar]")) return;
+      if (target.closest(".dropdown-panel") || target.closest("[role='menu']")) return;
       if (gridScrollRef.current?.contains(target)) return;
       if (Math.abs(e.deltaX) < Math.abs(e.deltaY)) {
         if (e.deltaY > 8 || e.deltaY < -8) e.preventDefault();

@@ -104,16 +104,17 @@ export function SearchBox({ onFocusChange }: Props) {
     onFocusChange?.(isActive);
   }, [isActive, onFocusChange]);
 
-  // 统一外部点击：以 wrapper（含输入框与下拉）为边界，外部 mousedown 即收起；点击一言区域仅收起引擎下拉但保持输入框聚焦（修复左键点击一言下拉导致失焦）
+  // 统一外部点击：以 wrapper（含输入框与下拉）为边界，外部 mousedown 即收起；点击一言/天气/日历区域仅收起引擎下拉但保持输入框聚焦
   useClickOutside(
     wrapperRef as React.RefObject<HTMLElement | null>,
     (e) => {
       if (!isActive) return;
       const target = (e?.target as HTMLElement | null) ?? null;
       const hitHitokoto = !!target?.closest?.("[data-hitokoto]") || !!target?.closest?.("[data-hitokoto-menu]");
+      const hitWeatherCalendar = !!target?.closest?.("[data-weather]") || !!target?.closest?.("[data-calendar]");
       setShowEngines(false);
-      if (hitHitokoto) {
-        // 一言区域的点击仅关闭引擎列表，不取消搜索聚焦；兜底重新聚焦输入框
+      if (hitHitokoto || hitWeatherCalendar) {
+        // 天气/日历/一言区域的点击仅关闭引擎列表，不取消搜索聚焦；兜底重新聚焦输入框
         setTimeout(() => inputRef.current?.focus(), 0);
         return;
       }
@@ -228,6 +229,7 @@ export function SearchBox({ onFocusChange }: Props) {
               const active = document.activeElement as HTMLElement | null;
               if (wrapperRef.current?.contains(active)) return;
               if (active?.closest?.("[data-hitokoto]") || active?.closest?.("[data-hitokoto-menu]")) return;
+              if (active?.closest?.("[data-weather]") || active?.closest?.("[data-calendar]")) return;
               setFocused(false);
             }, 120);
           }}

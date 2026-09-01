@@ -10,6 +10,8 @@ import { AppGrid } from "@/components/app-grid";
 import { SettingsPanel } from "@/components/settings-panel";
 import { DEFAULT_GROUPS, type Group } from "@/lib/data";
 import { MessageHost } from "@/components/ui/message";
+import { WeatherPanel } from "@/components/weather-panel";
+import { CalendarPanel } from "@/components/calendar-panel";
 
 export default function Home() {
   const [now, setNow] = useState<Date | null>(null);
@@ -20,6 +22,8 @@ export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"appearance" | "wallpaper" | "search" | "grid" | "data" | "about">("appearance");
   const [groupsData, setGroupsData] = useState<Group[]>(DEFAULT_GROUPS);
+  const [weatherOpen, setWeatherOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const reduce = useReducedMotion();
 
   useEffect(() => {
@@ -127,7 +131,9 @@ export default function Home() {
         e.preventDefault();
         const target = e.target as HTMLElement;
         if (target.closest("[data-modal]")) return;
+        if (target.closest("[data-weather]") || target.closest("[data-calendar]")) return;
         if (settingsOpen) return;
+        if (weatherOpen || calendarOpen) return;
         if (showGrid) return;
         if (searchFocused) return;
         // 仅当一言可见时才拦截其区域的右键；隐藏时允许穿透到壁纸以打开宫格（修复 display/visibility 导致的误拦截）
@@ -145,7 +151,16 @@ export default function Home() {
       onClick={(e) => {
         const target = e.target as HTMLElement;
         if (target.closest("[data-modal]")) return;
+        if (target.closest("[data-weather]") || target.closest("[data-calendar]")) return;
         if (settingsOpen) return;
+        if (weatherOpen || calendarOpen) {
+          // 点击空白关闭天气/日历（Dock 内按钮已 stopPropagation）
+          if (!target.closest("[data-dock]")) {
+            setWeatherOpen(false);
+            setCalendarOpen(false);
+          }
+          return;
+        }
         if (!showGrid) return;
         if (target.closest("[data-grid]") || target.closest("[data-dock]") || target.closest("[data-pagination]")) return;
         // 点击壁纸空白处回退
@@ -279,12 +294,25 @@ export default function Home() {
         <DockBar
           isGridOpen={showGrid}
           onToggleGrid={() => setShowGrid((v) => !v)}
+          isWeatherOpen={weatherOpen}
+          isCalendarOpen={calendarOpen}
+          onToggleWeather={() => {
+            setCalendarOpen(false);
+            setWeatherOpen((v) => !v);
+          }}
+          onToggleCalendar={() => {
+            setWeatherOpen(false);
+            setCalendarOpen((v) => !v);
+          }}
           onOpenSettings={(tab) => {
             if (tab) setSettingsTab(tab as never);
             setSettingsOpen(true);
           }}
         />
       </div>
+
+      <WeatherPanel open={weatherOpen} onClose={() => setWeatherOpen(false)} />
+      <CalendarPanel open={calendarOpen} onClose={() => setCalendarOpen(false)} />
 
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} initialTab={settingsTab} onTabChange={setSettingsTab} />
       <MessageHost />

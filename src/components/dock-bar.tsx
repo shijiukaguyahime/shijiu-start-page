@@ -2,7 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { SquaresFourIcon, ImageIcon, GearIcon, SunIcon, MoonIcon, MagnifyingGlassIcon, TranslateIcon, MonitorIcon } from "@phosphor-icons/react";
+import {
+  SquaresFourIcon,
+  ImageIcon,
+  GearIcon,
+  SunIcon,
+  MoonIcon,
+  MonitorIcon,
+  CloudSunIcon,
+  CalendarDotsIcon,
+} from "@phosphor-icons/react";
 
 /**
  * 底部 Dock：矩形圆角（外框与内部图标同一圆角体系），最左为"全部"菜单按钮
@@ -12,10 +21,18 @@ export function DockBar({
   isGridOpen,
   onToggleGrid,
   onOpenSettings,
+  isWeatherOpen,
+  isCalendarOpen,
+  onToggleWeather,
+  onToggleCalendar,
 }: {
   isGridOpen: boolean;
   onToggleGrid: () => void;
   onOpenSettings?: (tab?: string) => void;
+  isWeatherOpen?: boolean;
+  isCalendarOpen?: boolean;
+  onToggleWeather?: () => void;
+  onToggleCalendar?: () => void;
 }) {
   const reduce = useReducedMotion();
   const [tip, setTip] = useState<{ label: string; x: number; y: number } | null>(null);
@@ -58,15 +75,37 @@ export function DockBar({
 
         <span className="mx-0 h-6 w-px shrink-0 bg-zinc-900/10 dark:bg-white/15 md:mx-0.5" aria-hidden />
 
-        {/* 翻译 */}
-        <div className="relative flex shrink-0" onMouseEnter={(e) => showTip(e, "翻译")} onMouseLeave={hideTip}>
+        {/* 天气 */}
+        <div className="relative flex shrink-0" onMouseEnter={(e) => showTip(e, "天气")} onMouseLeave={hideTip} data-weather>
           <button
             type="button"
-            aria-label="翻译"
-            onClick={() => window.open("https://fanyi.baidu.com", "_blank", "noopener")}
-            className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
+            aria-label="天气"
+            aria-haspopup="dialog"
+            aria-expanded={!!isWeatherOpen}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleWeather?.();
+            }}
+            className={`flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl shadow-sm transition-all duration-200 hover:-translate-y-1 active:scale-[0.95] ${isWeatherOpen ? "bg-[var(--accent)] text-[var(--accent-fg)] hover:opacity-90" : "bg-white/85 hover:bg-white hover:shadow-md dark:bg-zinc-800/85 dark:hover:bg-zinc-700"}`}
           >
-            <span className="flex size-7 items-center justify-center rounded-full bg-white text-xs font-bold text-zinc-700 shadow-sm ring-1 ring-black/5 dark:bg-zinc-700 dark:text-zinc-200 dark:ring-white/10">译</span>
+            <CloudSunIcon weight={isWeatherOpen ? "fill" : "bold"} className={`size-5 ${isWeatherOpen ? "text-[var(--accent-fg)]" : "text-zinc-700 dark:text-zinc-200"}`} aria-hidden />
+          </button>
+        </div>
+
+        {/* 日历 */}
+        <div className="relative flex shrink-0" onMouseEnter={(e) => showTip(e, "日历")} onMouseLeave={hideTip} data-calendar>
+          <button
+            type="button"
+            aria-label="日历"
+            aria-haspopup="dialog"
+            aria-expanded={!!isCalendarOpen}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCalendar?.();
+            }}
+            className={`flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl shadow-sm transition-all duration-200 hover:-translate-y-1 active:scale-[0.95] ${isCalendarOpen ? "bg-[var(--accent)] text-[var(--accent-fg)] hover:opacity-90" : "bg-white/85 hover:bg-white hover:shadow-md dark:bg-zinc-800/85 dark:hover:bg-zinc-700"}`}
+          >
+            <CalendarDotsIcon weight={isCalendarOpen ? "fill" : "bold"} className={`size-5 ${isCalendarOpen ? "text-[var(--accent-fg)]" : "text-zinc-700 dark:text-zinc-200"}`} aria-hidden />
           </button>
         </div>
 
@@ -79,18 +118,6 @@ export function DockBar({
             className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
           >
             <ImageIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" aria-hidden />
-          </button>
-        </div>
-
-        {/* 搜索 */}
-        <div className="relative flex shrink-0" onMouseEnter={(e) => showTip(e, "搜索")} onMouseLeave={hideTip}>
-          <button
-            type="button"
-            aria-label="搜索"
-            onClick={() => onOpenSettings?.("search")}
-            className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
-          >
-            <MagnifyingGlassIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" aria-hidden />
           </button>
         </div>
 

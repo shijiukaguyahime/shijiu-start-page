@@ -96,7 +96,7 @@ export function DropdownMenu({ open, onClose, items, anchor, className }: Props)
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
           className={cn(
-            "dropdown-panel gpu w-[168px] overflow-hidden rounded-2xl p-1.5",
+            "dropdown-panel gpu max-h-[min(60vh,340px)] w-[168px] overflow-y-auto overscroll-contain rounded-2xl p-1.5",
             className,
           )}
         >
