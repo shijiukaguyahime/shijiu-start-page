@@ -25,6 +25,8 @@ export function DockBar({
   isCalendarOpen,
   onToggleWeather,
   onToggleCalendar,
+  isWallpaperOpen,
+  isSettingsOpen,
 }: {
   isGridOpen: boolean;
   onToggleGrid: () => void;
@@ -33,6 +35,8 @@ export function DockBar({
   isCalendarOpen?: boolean;
   onToggleWeather?: () => void;
   onToggleCalendar?: () => void;
+  isWallpaperOpen?: boolean;
+  isSettingsOpen?: boolean;
 }) {
   const reduce = useReducedMotion();
   const [tip, setTip] = useState<{ label: string; x: number; y: number } | null>(null);
@@ -58,6 +62,7 @@ export function DockBar({
             aria-label={isGridOpen ? "返回首页" : "图标"}
             aria-haspopup="dialog"
             aria-expanded={isGridOpen}
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               onToggleGrid();
@@ -67,9 +72,9 @@ export function DockBar({
               e.stopPropagation();
               onToggleGrid();
             }}
-            className={`flex size-10 shrink-0 cursor-pointer touch-manipulation items-center justify-center rounded-xl shadow-sm transition-all active:scale-[0.95] ${isGridOpen ? "bg-white text-zinc-900 hover:bg-zinc-100 dark:bg-zinc-700 dark:text-white" : "bg-zinc-900 text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"}`}
+            className={`flex size-10 shrink-0 cursor-pointer touch-manipulation items-center justify-center rounded-xl shadow-sm transition-all duration-200 ${isGridOpen ? "bg-zinc-900 text-white shadow-sm ring-1 ring-zinc-900/10 dark:bg-white dark:text-zinc-900 dark:ring-white/20" : "bg-white/85 hover:bg-white hover:shadow-md hover:-translate-y-1 active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"}`}
           >
-            <SquaresFourIcon weight="bold" className="size-5" aria-hidden />
+            <SquaresFourIcon weight="bold" className={`size-5 pointer-events-none ${isGridOpen ? "text-white dark:text-zinc-900" : "text-zinc-700 dark:text-zinc-200"}`} aria-hidden />
           </button>
         </div>
 
@@ -82,13 +87,14 @@ export function DockBar({
             aria-label="天气"
             aria-haspopup="dialog"
             aria-expanded={!!isWeatherOpen}
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               onToggleWeather?.();
             }}
-            className={`flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl shadow-sm transition-all duration-200 hover:-translate-y-1 active:scale-[0.95] ${isWeatherOpen ? "bg-[var(--accent)] text-[var(--accent-fg)] hover:opacity-90" : "bg-white/85 hover:bg-white hover:shadow-md dark:bg-zinc-800/85 dark:hover:bg-zinc-700"}`}
+            className={`flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl shadow-sm transition-all duration-200 ${isWeatherOpen ? "bg-zinc-900 text-white shadow-sm ring-1 ring-zinc-900/10 dark:bg-white dark:text-zinc-900 dark:ring-white/20" : "bg-white/85 hover:bg-white hover:shadow-md hover:-translate-y-1 active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"}`}
           >
-            <CloudSunIcon weight={isWeatherOpen ? "fill" : "bold"} className={`size-5 ${isWeatherOpen ? "text-[var(--accent-fg)]" : "text-zinc-700 dark:text-zinc-200"}`} aria-hidden />
+            <CloudSunIcon weight="bold" className={`size-5 pointer-events-none ${isWeatherOpen ? "text-white dark:text-zinc-900" : "text-zinc-700 dark:text-zinc-200"}`} aria-hidden />
           </button>
         </div>
 
@@ -99,13 +105,14 @@ export function DockBar({
             aria-label="日历"
             aria-haspopup="dialog"
             aria-expanded={!!isCalendarOpen}
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               onToggleCalendar?.();
             }}
-            className={`flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl shadow-sm transition-all duration-200 hover:-translate-y-1 active:scale-[0.95] ${isCalendarOpen ? "bg-[var(--accent)] text-[var(--accent-fg)] hover:opacity-90" : "bg-white/85 hover:bg-white hover:shadow-md dark:bg-zinc-800/85 dark:hover:bg-zinc-700"}`}
+            className={`flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl shadow-sm transition-all duration-200 ${isCalendarOpen ? "bg-zinc-900 text-white shadow-sm ring-1 ring-zinc-900/10 dark:bg-white dark:text-zinc-900 dark:ring-white/20" : "bg-white/85 hover:bg-white hover:shadow-md hover:-translate-y-1 active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"}`}
           >
-            <CalendarDotsIcon weight={isCalendarOpen ? "fill" : "bold"} className={`size-5 ${isCalendarOpen ? "text-[var(--accent-fg)]" : "text-zinc-700 dark:text-zinc-200"}`} aria-hidden />
+            <CalendarDotsIcon weight="bold" className={`size-5 pointer-events-none ${isCalendarOpen ? "text-white dark:text-zinc-900" : "text-zinc-700 dark:text-zinc-200"}`} aria-hidden />
           </button>
         </div>
 
@@ -114,10 +121,16 @@ export function DockBar({
           <button
             type="button"
             aria-label="壁纸"
-            onClick={() => onOpenSettings?.("wallpaper")}
-            className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
+            aria-haspopup="dialog"
+            aria-expanded={!!isWallpaperOpen}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenSettings?.("wallpaper");
+            }}
+            className={`flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl shadow-sm transition-all duration-200 ${isWallpaperOpen ? "bg-zinc-900 text-white shadow-sm ring-1 ring-zinc-900/10 dark:bg-white dark:text-zinc-900 dark:ring-white/20" : "bg-white/85 hover:bg-white hover:shadow-md hover:-translate-y-1 active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"}`}
           >
-            <ImageIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" aria-hidden />
+            <ImageIcon weight="bold" className={`size-5 pointer-events-none ${isWallpaperOpen ? "text-white dark:text-zinc-900" : "text-zinc-700 dark:text-zinc-200"}`} aria-hidden />
           </button>
         </div>
 
@@ -129,10 +142,16 @@ export function DockBar({
           <button
             type="button"
             aria-label="设置"
-            onClick={() => onOpenSettings?.("appearance")}
-            className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white/85 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-white hover:shadow-md active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"
+            aria-haspopup="dialog"
+            aria-expanded={!!isSettingsOpen}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenSettings?.("appearance");
+            }}
+            className={`flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl shadow-sm transition-all duration-200 ${isSettingsOpen ? "bg-zinc-900 text-white shadow-sm ring-1 ring-zinc-900/10 dark:bg-white dark:text-zinc-900 dark:ring-white/20" : "bg-white/85 hover:bg-white hover:shadow-md hover:-translate-y-1 active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700"}`}
           >
-            <GearIcon weight="bold" className="size-5 text-zinc-700 dark:text-zinc-200" aria-hidden />
+            <GearIcon weight="bold" className={`size-5 pointer-events-none ${isSettingsOpen ? "text-white dark:text-zinc-900" : "text-zinc-700 dark:text-zinc-200"}`} aria-hidden />
           </button>
         </div>
         {/* 移动端右侧内边距占位，避免最右图标紧贴父容器 */}

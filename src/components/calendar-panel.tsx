@@ -171,7 +171,7 @@ export function CalendarPanel({ open, onClose }: { open: boolean; onClose: () =>
     );
   }, [open, selected, holidayCache]);
 
-  useClickOutside(panelRef as React.RefObject<HTMLElement | null>, () => onClose(), open);
+  useClickOutside(panelRef as React.RefObject<HTMLElement | null>, () => onClose(), open, { ignoreSelectors: ["[data-dock]"] });
 
   useEffect(() => {
     if (!open) return;

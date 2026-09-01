@@ -171,7 +171,7 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
     }
   };
 
-  useClickOutside(panelRef as React.RefObject<HTMLElement | null>, () => onClose(), open);
+  useClickOutside(panelRef as React.RefObject<HTMLElement | null>, () => onClose(), open, { ignoreSelectors: ["[data-dock]"] });
 
   useEffect(() => {
     if (!open) return;

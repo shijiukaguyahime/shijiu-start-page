@@ -293,20 +293,36 @@ export default function Home() {
       <div data-dock>
         <DockBar
           isGridOpen={showGrid}
-          onToggleGrid={() => setShowGrid((v) => !v)}
+          onToggleGrid={() => {
+            setWeatherOpen(false);
+            setCalendarOpen(false);
+            setSettingsOpen(false);
+            setShowGrid((v) => !v);
+          }}
           isWeatherOpen={weatherOpen}
           isCalendarOpen={calendarOpen}
+          isWallpaperOpen={settingsOpen && settingsTab === "wallpaper"}
+          isSettingsOpen={settingsOpen && settingsTab === "appearance"}
           onToggleWeather={() => {
             setCalendarOpen(false);
+            setSettingsOpen(false);
             setWeatherOpen((v) => !v);
           }}
           onToggleCalendar={() => {
             setWeatherOpen(false);
+            setSettingsOpen(false);
             setCalendarOpen((v) => !v);
           }}
           onOpenSettings={(tab) => {
+            const target = (tab as typeof settingsTab) ?? "appearance";
+            if (settingsOpen && settingsTab === target) {
+              setSettingsOpen(false);
+              return;
+            }
             if (tab) setSettingsTab(tab as never);
             setSettingsOpen(true);
+            setWeatherOpen(false);
+            setCalendarOpen(false);
           }}
         />
       </div>
