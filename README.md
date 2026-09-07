@@ -7,9 +7,13 @@
 https://start.shijiucode.cn
 
 ## 截图
-<img width="1919" height="920" alt="image" src="https://github.com/user-attachments/assets/01501bb8-1f5c-45bd-bbd0-4e1b438e1918" />
-<img width="1916" height="915" alt="image" src="https://github.com/user-attachments/assets/cdb0984b-067b-4ba1-90be-fbd15a2f2b43" />
-<img width="1920" height="920" alt="image" src="https://github.com/user-attachments/assets/1af3e3df-c33a-4b0b-9b11-a393883214fa" />
+<img width="1920" height="915" alt="d7092f02fa1c6e8d24b4d117e77066a9" src="https://github.com/user-attachments/assets/dc7dd080-5c84-4d44-807d-07c6aa769e12" />
+<img width="1920" height="917" alt="1184f1df7f6a0db86b188c3354b33b4a" src="https://github.com/user-attachments/assets/aeb28748-facb-4cbd-a4d7-5a1ee021f3f7" />
+<img width="1920" height="917" alt="92e1bf8cc17b8011f41504e6444e6bbb" src="https://github.com/user-attachments/assets/9796bcd2-989e-409d-af3b-636ce8a2088c" />
+<img width="975" height="848" alt="749bfb2441002dad26b26814a7863382" src="https://github.com/user-attachments/assets/d903095a-d2d7-468d-894e-a9be4373559c" />
+<img width="1919" height="914" alt="9a04c94e3a0158b9bddd56b57dfed1e7" src="https://github.com/user-attachments/assets/2ec7e286-5e75-42b9-a589-2867b4c2fe93" />
+<img width="1920" height="917" alt="0c83a2fea59d403bdbeaf74679842471" src="https://github.com/user-attachments/assets/3b6d70cb-7b64-4fa8-9c99-99b9c661185d" />
+
 
 
 ## 页面构成（仅四项）
