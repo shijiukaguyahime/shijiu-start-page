@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const DEFAULT_WALLPAPER = "/default_bg.avif";
 export const WALLPAPER_KEY = "startpage:wallpaper";
@@ -121,16 +121,9 @@ export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
   const [loaded, setLoaded] = useState(false);
   const [brightness, setBrightness] = useState(90);
   const [blur, setBlur] = useState(100);
+  const requestSeqRef = useRef(0);
 
   useEffect(() => {
-    const apply = () => {
-      const w = getWallpaper();
-      setUrl((prev) => {
-        if (prev === w.url) return prev;
-        setLoaded(false);
-        return w.url;
-      });
-    };
     const applyBrightness = () => {
       const v = Number(localStorage.getItem("startpage:wallpaperBrightness"));
       if (Number.isFinite(v) && v !== 0) setBrightness(Math.min(120, Math.max(70, v)));
@@ -152,10 +145,40 @@ export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
       }
       setBlur(Math.min(100, Math.max(0, v)));
     };
-    apply();
+
+    const applyWallpaper = async () => {
+      const w = getWallpaper();
+      const seq = ++requestSeqRef.current;
+      setUrl((prev) => {
+        if (prev === w.url) return prev;
+        setLoaded(false);
+        return w.url;
+      });
+
+      // 请求地址（bing 每日 / 随机风景）每次刷新都请求新图；具体图片 url（历史选中）则固定
+      if (!isWallpaperRequestUrl(w.url)) return;
+      let concrete: string | null = null;
+      if (w.type === "nature" || w.url.includes("wp.upx8.com")) {
+        concrete = await fetchNatureConcreteUrl();
+      } else if (w.type === "bing" || w.url.includes("bing.biturl.top")) {
+        concrete = await fetchBingConcreteUrl();
+      }
+      if (seq !== requestSeqRef.current) return;
+      const display = concrete || w.url;
+      setUrl((prev) => {
+        if (prev === display) return prev;
+        setLoaded(false);
+        return display;
+      });
+      if (concrete && concrete !== w.url) addWallpaperHistory(concrete);
+    };
+
     applyBrightness();
     applyBlur();
-    const onChange = () => apply();
+    applyWallpaper();
+    const onChange = () => {
+      void applyWallpaper();
+    };
     const onBright = () => applyBrightness();
     const onBlur = () => applyBlur();
     window.addEventListener("wallpaper-change", onChange);
@@ -165,6 +188,7 @@ export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
     window.addEventListener("storage", onBright);
     window.addEventListener("storage", onBlur);
     return () => {
+      requestSeqRef.current++;
       window.removeEventListener("wallpaper-change", onChange);
       window.removeEventListener("storage", onChange);
       window.removeEventListener("wallpaper-brightness-change" as never, onBright);
@@ -172,32 +196,6 @@ export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
       window.removeEventListener("storage", onBright);
       window.removeEventListener("storage", onBlur);
     };
-  }, []);
-
-  // 若当前存储的是请求接口（旧历史，随机风景/bing 每日），迁移为具体图片 url 避免每次刷新随机
-  useEffect(() => {
-    const w = getWallpaper();
-    if (isWallpaperRequestUrl(w.url)) {
-      (async () => {
-        let concrete: string | null = null;
-        if (w.type === "nature" || w.url.includes("wp.upx8.com")) {
-          concrete = await fetchNatureConcreteUrl();
-        } else if (w.type === "bing" || w.url.includes("bing.biturl.top")) {
-          concrete = await fetchBingConcreteUrl();
-        }
-        if (concrete && concrete !== w.url) {
-          const v: WallpaperValue = { type: w.type, url: concrete };
-          localStorage.setItem(WALLPAPER_KEY, JSON.stringify(v));
-          addWallpaperHistory(concrete);
-          window.dispatchEvent(new Event("wallpaper-change"));
-          setUrl((prev) => {
-            if (prev === concrete) return prev;
-            setLoaded(false);
-            return concrete;
-          });
-        }
-      })();
-    }
   }, []);
 
   useEffect(() => {

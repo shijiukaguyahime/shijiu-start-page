@@ -73,35 +73,9 @@ function mergeItemsWithGroups(prev: GridItem[], groupFlat: GridItem[]): GridItem
   });
   const existing = new Set(next.map((p) => p.id));
   const toAdd = groupFlat.filter((s) => !existing.has(s.id));
+  // 新图标始终追加到当前展示顺序末尾，避免“拖拽到队尾后再新增”跑到被拖拽图标前面
   for (const add of toAdd) {
-    const flatIdx = groupFlat.findIndex((s) => s.id === add.id);
-    let insertAfterIdx = -1;
-    for (let i = flatIdx - 1; i >= 0; i--) {
-      const predId = groupFlat[i].id;
-      const idxInNext = next.findIndex((p) => p.id === predId);
-      if (idxInNext !== -1) {
-        insertAfterIdx = idxInNext;
-        break;
-      }
-    }
-    if (insertAfterIdx === -1) {
-      let insertBeforeIdx = -1;
-      for (let i = flatIdx + 1; i < groupFlat.length; i++) {
-        const succId = groupFlat[i].id;
-        const idx = next.findIndex((p) => p.id === succId);
-        if (idx !== -1) {
-          insertBeforeIdx = idx;
-          break;
-        }
-      }
-      if (insertBeforeIdx !== -1) {
-        next.splice(insertBeforeIdx, 0, { ...add, w: 1 as const, h: 1 as const });
-      } else {
-        next.push({ ...add, w: 1 as const, h: 1 as const });
-      }
-    } else {
-      next.splice(insertAfterIdx + 1, 0, { ...add, w: 1 as const, h: 1 as const });
-    }
+    next.push({ ...add, w: 1 as const, h: 1 as const });
   }
   if (next.length === 0 && groupFlat.length) {
     return groupFlat.map((s) => ({ ...s, w: 1 as const, h: 1 as const }));

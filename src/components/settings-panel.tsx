@@ -26,8 +26,6 @@ import {
   getWallpaperHistory,
   removeWallpaperHistory,
   clearWallpaperHistory,
-  fetchBingConcreteUrl,
-  fetchNatureConcreteUrl,
 } from "@/components/wallpaper";
 import type { WallpaperValue } from "@/components/wallpaper";
 import Sortable from "sortablejs";
@@ -413,27 +411,18 @@ function WallpaperPane() {
     };
   }, []);
 
-  const [picking, setPicking] = useState<WallpaperValue["type"] | null>(null);
-
-  const pick = async (type: WallpaperValue["type"]) => {
+  const pick = (type: WallpaperValue["type"]) => {
+    // bing/随机风景存“请求地址”，壁纸组件每次刷新都会重新请求；手动选中历史记录中的某一张才固定
     if (type === "bing") {
-      setPicking("bing");
-      const concrete = await fetchBingConcreteUrl();
-      const url = concrete || BING_WALLPAPER;
-      const v: WallpaperValue = { type, url };
+      const v: WallpaperValue = { type, url: BING_WALLPAPER };
       setWallpaper(v);
       setCurr(v);
-      setPicking(null);
       return;
     }
     if (type === "nature") {
-      setPicking("nature");
-      const concrete = await fetchNatureConcreteUrl();
-      const url = concrete || `${NATURE_WALLPAPER}&_t=${Date.now()}`;
-      const v: WallpaperValue = { type, url };
+      const v: WallpaperValue = { type, url: NATURE_WALLPAPER };
       setWallpaper(v);
       setCurr(v);
-      setPicking(null);
       return;
     }
     const map: Record<string, string> = {
@@ -500,16 +489,14 @@ function WallpaperPane() {
             <button
               key={o.id}
               type="button"
-              onClick={() => void pick(o.id as WallpaperValue["type"])}
-              disabled={picking !== null}
-              className={`group relative overflow-hidden rounded-xl border p-3 text-left transition-all disabled:opacity-60 ${
+              onClick={() => pick(o.id as WallpaperValue["type"])}
+              className={`group relative overflow-hidden rounded-xl border p-3 text-left transition-all ${
                 isActive(o.id) ? "border-zinc-900 bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow" : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700"
               }`}
             >
               <div className={`text-sm font-medium ${isActive(o.id) ? "text-white dark:text-zinc-900" : "text-zinc-800 dark:text-zinc-100"}`}>{o.label}</div>
-              <div className={`text-xs ${isActive(o.id) ? "text-white/70 dark:text-zinc-600" : "text-zinc-500 dark:text-zinc-400"}`}>{picking === o.id ? "加载中..." : o.sub}</div>
-              {isActive(o.id) && picking !== o.id && <CheckIcon weight="bold" className="absolute right-2 top-2 size-4 text-white dark:text-zinc-900" />}
-              {picking === o.id && <span className="absolute right-2 top-2 size-4 animate-spin rounded-full border-2 border-white/30 border-t-white dark:border-zinc-900/20 dark:border-t-zinc-900" />}
+              <div className={`text-xs ${isActive(o.id) ? "text-white/70 dark:text-zinc-600" : "text-zinc-500 dark:text-zinc-400"}`}>{o.sub}</div>
+              {isActive(o.id) && <CheckIcon weight="bold" className="absolute right-2 top-2 size-4 text-white dark:text-zinc-900" />}
             </button>
           ))}
         </div>

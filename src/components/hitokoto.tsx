@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
-import { CopyIcon, MagnifyingGlassIcon, DotsThreeIcon } from "@phosphor-icons/react";
+import { CopyIcon, MagnifyingGlassIcon, DotsThreeIcon, ArrowsClockwiseIcon } from "@phosphor-icons/react";
 import { SEARCH_ENGINES } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { limeDropdownMotion, useClickOutside } from "@/lib/hooks";
@@ -17,23 +17,26 @@ export function Hitokoto() {
   const [data, setData] = useState<Hitokoto | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion();
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("https://v1.hitokoto.cn/?encode=json")
-      .then((r) => r.json())
-      .then((j) => {
-        if (!cancelled) setData({ hitokoto: j.hitokoto, from: j.from, from_who: j.from_who });
-      })
-      .catch(() => {
-        if (!cancelled) setData({ hitokoto: "愿你遍历山河，觉得人间值得。", from: "人间值得", from_who: null });
-      });
-    return () => {
-      cancelled = true;
-    };
+  const fetchHitokoto = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const r = await fetch("https://v1.hitokoto.cn/?encode=json");
+      const j = await r.json();
+      setData({ hitokoto: j.hitokoto, from: j.from, from_who: j.from_who });
+    } catch {
+      setData({ hitokoto: "愿你遍历山河，觉得人间值得。", from: "人间值得", from_who: null });
+    } finally {
+      setRefreshing(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void fetchHitokoto();
+  }, [fetchHitokoto]);
 
   // 统一点击外部关闭：判定以整个一言容器（含按钮与下拉）为边界，外部 mousedown 即收起
   useClickOutside(
@@ -88,23 +91,40 @@ export function Hitokoto() {
         </p>
 
         <div className="absolute right-2 top-2 z-20">
-          <button
-            type="button"
-            aria-label="一言选项"
-            aria-haspopup="menu"
-            aria-expanded={showMenu}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowMenu((v) => !v);
-            }}
-            className="relative z-20 flex size-7 items-center justify-center rounded-full bg-white/70 text-zinc-600 opacity-0 shadow-sm ring-1 ring-black/5 transition-all duration-300 hover:bg-white hover:text-zinc-900 group-hover:opacity-100"
-          >
-            <DotsThreeIcon weight="bold" className="size-4" aria-hidden />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              aria-label="刷新一言"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                void fetchHitokoto();
+              }}
+              className="relative z-20 flex size-7 items-center justify-center rounded-full bg-white/70 text-zinc-600 opacity-0 shadow-sm ring-1 ring-black/5 transition-all duration-300 hover:bg-white hover:text-zinc-900 group-hover:opacity-100"
+            >
+              <ArrowsClockwiseIcon weight="bold" className={`size-4 ${refreshing ? "animate-spin" : ""}`} aria-hidden />
+            </button>
+            <button
+              type="button"
+              aria-label="一言选项"
+              aria-haspopup="menu"
+              aria-expanded={showMenu}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowMenu((v) => !v);
+              }}
+              className="relative z-20 flex size-7 items-center justify-center rounded-full bg-white/70 text-zinc-600 opacity-0 shadow-sm ring-1 ring-black/5 transition-all duration-300 hover:bg-white hover:text-zinc-900 group-hover:opacity-100"
+            >
+              <DotsThreeIcon weight="bold" className="size-4" aria-hidden />
+            </button>
+          </div>
 
           <AnimatePresence>
             {showMenu && (

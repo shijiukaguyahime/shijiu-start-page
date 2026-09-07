@@ -56,12 +56,21 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
   const [city, setCity] = useState<string>(() => getStoredCity() || "上海");
   const [inputCity, setInputCity] = useState("");
   const [data, setData] = useState<WeatherData | null>(null);
-  const [loading, setLoading] = useState(false);
+  // 初始即加载态，避免刷新后首次打开出现空内容导致的低高度闪烁
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [forecastPage, setForecastPage] = useState(0);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const titleId = "weather-title";
   const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  // 每次打开重置到“今天”，避免上次浏览的分页/选中日期残留
+  useEffect(() => {
+    if (!open) return;
+    setForecastPage(0);
+    setSelectedDate(null);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -79,6 +88,7 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
         if (cancelled) return;
         setData(j);
         setCity(j.city);
+        setSelectedDate(j.daily[0]?.date ?? null);
         localStorage.setItem(CITY_KEY, j.city);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "获取失败");
@@ -98,6 +108,7 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
         if (cancelled) return;
         setData(j);
         setCity(j.city);
+        setSelectedDate(j.daily[0]?.date ?? null);
         localStorage.setItem(CITY_KEY, j.city);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "获取失败");
@@ -162,6 +173,7 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
       const j = (await r.json()) as WeatherData;
       setData(j);
       setCity(j.city);
+      setSelectedDate(j.daily[0]?.date ?? null);
       localStorage.setItem(CITY_KEY, j.city);
       setShowSearch(false);
     } catch (e) {
@@ -223,6 +235,9 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
 
   const totalPages = data ? Math.ceil(data.daily.length / 7) : 1;
   const pageDaily = data ? data.daily.slice(forecastPage * 7, forecastPage * 7 + 7) : [];
+  const selectedDaily = data && selectedDate ? (data.daily.find((d) => d.date === selectedDate) ?? null) : null;
+  const selectedDailyDate = selectedDaily ? new Date(`${selectedDaily.date}T12:00:00`) : null;
+  const selectedDailyIsToday = selectedDaily ? new Date().toISOString().slice(0, 10) === selectedDaily.date : false;
 
   return (
     <AnimatePresence>
@@ -387,6 +402,29 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
                     </div>
                   </div>
 
+                  {selectedDaily && selectedDailyDate && (
+                    <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800" role="region" aria-label={`${selectedDaily.date} 天气预报详情`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
+                              {selectedDailyDate.toLocaleDateString("zh-CN", { month: "long", day: "numeric" })}
+                            </span>
+                            {selectedDailyIsToday && <span className="rounded-full px-2 py-0.5 text-[11px] font-bold leading-none text-[var(--accent)] ring-2 ring-[var(--accent)]">今天</span>}
+                          </div>
+                          <p className="mt-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">{selectedDaily.text}</p>
+                          {selectedDaily.precip != null && <p className="mt-1 text-xs text-sky-600 dark:text-sky-400">降水概率 {selectedDaily.precip}%</p>}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <WeatherPhosphorIcon code={selectedDaily.code} size={28} />
+                          <span className="text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+                            {selectedDaily.max}°<span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">/{selectedDaily.min}°</span>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div role="region" aria-labelledby="weather-forecast-title" aria-live="polite">
                     <div className="mb-2.5 flex items-center justify-between">
                       <h3 id="weather-forecast-title" className="text-[13px] font-semibold tracking-wide text-zinc-700 dark:text-zinc-300">14日预报</h3>
@@ -414,18 +452,21 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
                         </button>
                       </div>
                     </div>
-                    <div className="grid grid-cols-7 gap-[3px] sm:gap-1.5" role="list" aria-label="每日天气预报">
+                    <div className="grid grid-cols-7 gap-[3px] sm:gap-1.5" role="group" aria-label="每日天气预报">
                       {pageDaily.map((d) => {
                         const dt = new Date(d.date);
                         const isToday = new Date().toISOString().slice(0, 10) === d.date;
+                        const isSelected = selectedDate === d.date;
                         const week = ["日", "一", "二", "三", "四", "五", "六"][dt.getDay()];
                         return (
-                          <div
+                          <button
+                            type="button"
                             key={d.date}
-                            role="listitem"
                             aria-label={`${d.date} 周${week} ${d.text} 最高${d.max}度 最低${d.min}度${isToday ? " 今天" : ""}`}
                             aria-current={isToday ? "date" : undefined}
-                            className={`flex min-w-0 flex-col items-center gap-0.5 overflow-hidden rounded-xl border px-[3px] py-1.5 text-center sm:gap-1 sm:px-1 sm:py-2.5 ${isToday ? "border-zinc-900 bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 dark:border-white" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"}`}
+                            aria-pressed={isSelected}
+                            onClick={() => setSelectedDate(d.date)}
+                            className={`flex min-w-0 cursor-pointer flex-col items-center gap-0.5 overflow-hidden rounded-xl border px-[3px] py-1.5 text-center transition-colors sm:gap-1 sm:px-1 sm:py-2.5 ${isToday ? "border-zinc-900 bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 dark:border-white" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800"} ${isSelected ? "ring-2 ring-[var(--accent)]" : ""}`}
                           >
                             <span className={`whitespace-nowrap text-[10px] font-medium leading-none tracking-tight max-[360px]:text-[9px] sm:text-xs ${isToday ? "text-white dark:text-zinc-900" : "text-zinc-500 dark:text-zinc-400"}`}>{isToday ? "今天" : `周${week}`}</span>
                             <span className={`whitespace-nowrap text-[10px] leading-none tracking-tight max-[360px]:text-[9px] sm:text-[11px] ${isToday ? "text-white/70 dark:text-zinc-600" : "text-zinc-400"}`}>{d.date.slice(5)}</span>
@@ -436,7 +477,7 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
                             <span className={`whitespace-nowrap text-[10px] font-semibold tabular-nums leading-none tracking-tight max-[360px]:text-[9px] sm:text-xs ${isToday ? "text-white dark:text-zinc-900" : "text-zinc-900 dark:text-zinc-100"}`}>
                               {d.max}°<span className="font-normal opacity-60">/{d.min}°</span>
                             </span>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>

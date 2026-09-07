@@ -61,7 +61,15 @@ export function CalendarPanel({ open, onClose }: { open: boolean; onClose: () =>
   const [selected, setSelected] = useState<string>(() => formatDate(new Date()));
   const [holidayCache, setHolidayCache] = useState<Record<string, HolidayInfo>>({});
   const [detail, setDetail] = useState<{ lunar: LunarInfo; holiday: HolidayInfo | null } | null>(null);
-  const todayStr = useMemo(() => formatDate(new Date()), []);
+  const todayStr = formatDate(new Date());
+
+  // 每次打开默认回到今天，避免关闭再打开仍停留上次选中的日期
+  useEffect(() => {
+    if (!open) return;
+    const now = new Date();
+    setView({ year: now.getFullYear(), month: now.getMonth() });
+    setSelected(formatDate(now));
+  }, [open]);
 
   const [yearAnchor, setYearAnchor] = useState<{ x: number; y: number } | null>(null);
   const [monthAnchor, setMonthAnchor] = useState<{ x: number; y: number } | null>(null);
