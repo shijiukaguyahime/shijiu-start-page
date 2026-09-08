@@ -7,7 +7,7 @@ export const WALLPAPER_KEY = "startpage:wallpaper";
 export const BING_WALLPAPER = "https://bing.biturl.top/?resolution=UHD&format=image&index=0&mkt=zh-CN";
 export const NATURE_WALLPAPER = "https://wp.upx8.com/api.php?category=nature";
 
-export type WallpaperValue = { type: "default" | "bing" | "unsplash" | "nature"; url: string };
+export type WallpaperValue = { type: "default" | "bing" | "unsplash" | "nature"; url: string; request?: string };
 
 export function getWallpaper(): WallpaperValue {
   if (typeof window === "undefined") return { type: "default", url: DEFAULT_WALLPAPER };
@@ -146,38 +146,55 @@ export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
       setBlur(Math.min(100, Math.max(0, v)));
     };
 
-    const applyWallpaper = async () => {
+    // 仅全新页面加载时随机解析一次，storage/事件监听触发的二次加载只采用已解析的具体图，避免多窗口历史写入触发循环解析
+    const applyWallpaper = async (initialMount: boolean) => {
       const w = getWallpaper();
       const seq = ++requestSeqRef.current;
+      const requestUrl = w.request;
+      const hasRequest = !!requestUrl && isWallpaperRequestUrl(requestUrl);
+
+      if (hasRequest && initialMount) {
+        // 随机风景 / Bing 每日：每次整页刷新请求一张新图
+        setUrl((prev) => {
+          if (prev === w.url) return prev;
+          setLoaded(false);
+          return w.url;
+        });
+        let concrete: string | null = null;
+        if (w.type === "nature" || requestUrl.includes("wp.upx8.com")) {
+          concrete = await fetchNatureConcreteUrl();
+        } else {
+          concrete = await fetchBingConcreteUrl();
+        }
+        if (seq !== requestSeqRef.current) return;
+        const display = concrete || w.url;
+        setUrl((prev) => {
+          if (prev === display) return prev;
+          setLoaded(false);
+          return display;
+        });
+        if (concrete && concrete !== w.url) {
+          // 将解析出的具体图写回（缩略图/历史/背景共用同一地址），并保留 request 标记供下次刷新重新随机
+          localStorage.setItem(WALLPAPER_KEY, JSON.stringify({ ...w, url: concrete }));
+          addWallpaperHistory(concrete);
+          window.dispatchEvent(new Event("wallpaper-change"));
+        }
+        return;
+      }
+
+      // 固定壁纸或已解析的随机图：直接展示当前地址
       setUrl((prev) => {
         if (prev === w.url) return prev;
         setLoaded(false);
         return w.url;
       });
-
-      // 请求地址（bing 每日 / 随机风景）每次刷新都请求新图；具体图片 url（历史选中）则固定
-      if (!isWallpaperRequestUrl(w.url)) return;
-      let concrete: string | null = null;
-      if (w.type === "nature" || w.url.includes("wp.upx8.com")) {
-        concrete = await fetchNatureConcreteUrl();
-      } else if (w.type === "bing" || w.url.includes("bing.biturl.top")) {
-        concrete = await fetchBingConcreteUrl();
-      }
-      if (seq !== requestSeqRef.current) return;
-      const display = concrete || w.url;
-      setUrl((prev) => {
-        if (prev === display) return prev;
-        setLoaded(false);
-        return display;
-      });
-      if (concrete && concrete !== w.url) addWallpaperHistory(concrete);
     };
 
     applyBrightness();
     applyBlur();
-    applyWallpaper();
+    applyWallpaper(true);
     const onChange = () => {
-      void applyWallpaper();
+      void applyWallpaper(false);
     };
     const onBright = () => applyBrightness();
     const onBlur = () => applyBlur();

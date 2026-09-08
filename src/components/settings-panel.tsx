@@ -26,6 +26,8 @@ import {
   getWallpaperHistory,
   removeWallpaperHistory,
   clearWallpaperHistory,
+  fetchBingConcreteUrl,
+  fetchNatureConcreteUrl,
 } from "@/components/wallpaper";
 import type { WallpaperValue } from "@/components/wallpaper";
 import Sortable from "sortablejs";
@@ -411,16 +413,13 @@ function WallpaperPane() {
     };
   }, []);
 
-  const pick = (type: WallpaperValue["type"]) => {
-    // bing/随机风景存“请求地址”，壁纸组件每次刷新都会重新请求；手动选中历史记录中的某一张才固定
-    if (type === "bing") {
-      const v: WallpaperValue = { type, url: BING_WALLPAPER };
-      setWallpaper(v);
-      setCurr(v);
-      return;
-    }
-    if (type === "nature") {
-      const v: WallpaperValue = { type, url: NATURE_WALLPAPER };
+  const pick = async (type: WallpaperValue["type"]) => {
+    // 随机风景 / Bing 每日：选择时立即解析一张具体图片，缩略图/背景/历史共用同一地址；
+    // 请求地址存入 request 字段，供整页刷新时重新随机（避免缩略图与背景是两张不同随机图）
+    if (type === "bing" || type === "nature") {
+      const request = type === "bing" ? BING_WALLPAPER : NATURE_WALLPAPER;
+      const concrete = type === "bing" ? await fetchBingConcreteUrl() : await fetchNatureConcreteUrl();
+      const v: WallpaperValue = { type, url: concrete || request, request };
       setWallpaper(v);
       setCurr(v);
       return;
@@ -428,8 +427,6 @@ function WallpaperPane() {
     const map: Record<string, string> = {
       default: "/default_bg.avif",
       unsplash: "/default_bg.avif",
-      bing: BING_WALLPAPER,
-      nature: NATURE_WALLPAPER,
     };
     const url = map[type];
     const v: WallpaperValue = { type, url };
@@ -489,7 +486,7 @@ function WallpaperPane() {
             <button
               key={o.id}
               type="button"
-              onClick={() => pick(o.id as WallpaperValue["type"])}
+              onClick={() => void pick(o.id as WallpaperValue["type"])}
               className={`group relative overflow-hidden rounded-xl border p-3 text-left transition-all ${
                 isActive(o.id) ? "border-zinc-900 bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow" : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700"
               }`}
