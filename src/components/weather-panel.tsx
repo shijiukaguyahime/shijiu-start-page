@@ -385,7 +385,7 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
                         </div>
                         <p className="mt-1.5 text-[13px] text-zinc-500 dark:text-zinc-400">体感 {data.current.feelsLike}° · 湿度 {data.current.humidity}% · 风速 {data.current.wind}km/h</p>
                         <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
-                          {new Date(data.updateTime).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} 更新
+                          {new Date(data.updateTime).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} 更新 · 数据来源 {data.source === "open-meteo" ? "Open-Meteo" : data.source}
                         </p>
                       </div>
                       <span className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-700 dark:ring-zinc-600" aria-hidden>

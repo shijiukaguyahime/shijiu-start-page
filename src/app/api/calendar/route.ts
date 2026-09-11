@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Solar } from "lunar-javascript";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -6,8 +7,9 @@ export const revalidate = 0;
 // 国内免费日历/节假日 API
 // 1) timor.tech  https://timor.tech/api/holiday/info/2025-01-01  (国内，无需Key，免费)
 // 2) vvhan      https://api.vvhan.com/api/holiday?date=2025-01-01
-// 3) oioweb     https://api.oioweb.cn/api/common/calendar?date=2025-01-01  (含农历、宜忌)
-// 4) 本地兜底：Intl农历 + 硬编码节假日库（保证离线可用）
+// 3) 本地兜底：Intl农历 + lunar-javascript 节日推算（保证离线可用，任意年份有效）
+// 注：不提供宜忌——免费接口均无宜忌字段（timor 只有节假日，oioweb/8i5/tenapi 已实测失效），
+// 无权威来源的数据不编造展示。
 
 async function fetchWithTimeout(url: string, ms = 3500) {
   const c = new AbortController();
@@ -22,77 +24,61 @@ async function fetchWithTimeout(url: string, ms = 3500) {
   }
 }
 
-// 2025-2026 法定节假日（国务院公布），用于离线兜底
-// type: "holiday" | "workday" ; holiday 表示休，workday 表示调休上班
-type HolidayEntry = { date: string; name: string; type: "holiday" | "workday" };
-const HOLIDAY_2025: HolidayEntry[] = [
-  { date: "2025-01-01", name: "元旦", type: "holiday" },
-  { date: "2025-01-26", name: "春节调休", type: "workday" },
-  { date: "2025-01-28", name: "春节", type: "holiday" },
-  { date: "2025-01-29", name: "春节", type: "holiday" },
-  { date: "2025-01-30", name: "春节", type: "holiday" },
-  { date: "2025-01-31", name: "春节", type: "holiday" },
-  { date: "2025-02-08", name: "春节调休", type: "workday" },
-  { date: "2025-04-04", name: "清明", type: "holiday" },
-  { date: "2025-04-05", name: "清明", type: "holiday" },
-  { date: "2025-04-06", name: "清明", type: "holiday" },
-  { date: "2025-05-01", name: "劳动节", type: "holiday" },
-  { date: "2025-05-02", name: "劳动节", type: "holiday" },
-  { date: "2025-05-03", name: "劳动节", type: "holiday" },
-  { date: "2025-05-04", name: "劳动节", type: "holiday" },
-  { date: "2025-05-05", name: "劳动节", type: "holiday" },
-  { date: "2025-05-31", name: "端午", type: "holiday" },
-  { date: "2025-06-01", name: "端午", type: "holiday" },
-  { date: "2025-06-02", name: "端午", type: "holiday" },
-  { date: "2025-09-28", name: "国庆调休", type: "workday" },
-  { date: "2025-10-01", name: "国庆", type: "holiday" },
-  { date: "2025-10-02", name: "国庆", type: "holiday" },
-  { date: "2025-10-03", name: "国庆", type: "holiday" },
-  { date: "2025-10-04", name: "国庆", type: "holiday" },
-  { date: "2025-10-05", name: "国庆", type: "holiday" },
-  { date: "2025-10-06", name: "国庆", type: "holiday" },
-  { date: "2025-10-07", name: "国庆", type: "holiday" },
-  { date: "2025-10-08", name: "国庆", type: "holiday" },
-  { date: "2025-10-11", name: "国庆调休", type: "workday" },
-];
+// 法定节假日不硬编码年份：国务院每年底才公布次年调休安排，写死 2025/2026 到 2027 就失效。
+// 策略：线上 timor/vvhan 优先（有准确调休）；离线用 lunar-javascript 按农历/阳历/节气推正统节日名，任意年份有效。
 
-const HOLIDAY_2026: HolidayEntry[] = [
-  { date: "2026-01-01", name: "元旦", type: "holiday" },
-  { date: "2026-01-02", name: "元旦", type: "holiday" },
-  { date: "2026-01-03", name: "元旦", type: "holiday" },
-  { date: "2026-02-15", name: "春节", type: "holiday" },
-  { date: "2026-02-16", name: "春节", type: "holiday" },
-  { date: "2026-02-17", name: "春节", type: "holiday" },
-  { date: "2026-02-18", name: "春节", type: "holiday" },
-  { date: "2026-02-19", name: "春节", type: "holiday" },
-  { date: "2026-02-20", name: "春节", type: "holiday" },
-  { date: "2026-02-21", name: "春节", type: "holiday" },
-  { date: "2026-02-22", name: "春节", type: "holiday" },
-  { date: "2026-02-23", name: "春节", type: "holiday" },
-  { date: "2026-04-04", name: "清明", type: "holiday" },
-  { date: "2026-04-05", name: "清明", type: "holiday" },
-  { date: "2026-04-06", name: "清明", type: "holiday" },
-  { date: "2026-05-01", name: "劳动节", type: "holiday" },
-  { date: "2026-05-02", name: "劳动节", type: "holiday" },
-  { date: "2026-05-03", name: "劳动节", type: "holiday" },
-  { date: "2026-05-04", name: "劳动节", type: "holiday" },
-  { date: "2026-05-05", name: "劳动节", type: "holiday" },
-  { date: "2026-06-19", name: "端午", type: "holiday" },
-  { date: "2026-06-20", name: "端午", type: "holiday" },
-  { date: "2026-06-21", name: "端午", type: "holiday" },
-  { date: "2026-09-25", name: "中秋", type: "holiday" },
-  { date: "2026-09-26", name: "中秋", type: "holiday" },
-  { date: "2026-09-27", name: "中秋", type: "holiday" },
-  { date: "2026-10-01", name: "国庆", type: "holiday" },
-  { date: "2026-10-02", name: "国庆", type: "holiday" },
-  { date: "2026-10-03", name: "国庆", type: "holiday" },
-  { date: "2026-10-04", name: "国庆", type: "holiday" },
-  { date: "2026-10-05", name: "国庆", type: "holiday" },
-  { date: "2026-10-06", name: "国庆", type: "holiday" },
-  { date: "2026-10-07", name: "国庆", type: "holiday" },
-];
+// 只保留法定节假日正日（洋节如圣诞不收录，避免网格误标“休”）
+const FESTIVAL_ALIAS: Record<string, string> = {
+  元旦节: "元旦",
+  春节: "春节",
+  元宵节: "元宵",
+  清明: "清明",
+  寒食节: "清明",
+  劳动节: "劳动节",
+  端午节: "端午",
+  七夕节: "七夕",
+  中秋节: "中秋",
+  重阳节: "重阳",
+  国庆节: "国庆",
+};
 
-const HOLIDAY_MAP = new Map<string, HolidayEntry>([...HOLIDAY_2025, ...HOLIDAY_2026].map((h) => [h.date, h]));
+function pickLocalFestival(y: number, m: number, d: number): string | null {
+  try {
+    const solar = Solar.fromYmd(y, m, d);
+    const lunar = solar.getLunar();
+    // 农历节日优先（春节/端午/中秋）
+    const lunarHits = [...(lunar.getFestivals() ?? []), ...(lunar.getOtherFestivals() ?? [])];
+    for (const f of lunarHits) {
+      if (FESTIVAL_ALIAS[f]) return FESTIVAL_ALIAS[f];
+    }
+    // 阳历节日（元旦/劳动/国庆）
+    for (const f of (solar.getFestivals() ?? []) as string[]) {
+      if (FESTIVAL_ALIAS[f]) return FESTIVAL_ALIAS[f];
+    }
+    // 清明是节气不是节日，单独判断
+    try {
+      const jieqi = (lunar.getJieQi() ?? "") as string;
+      if (jieqi === "清明") return "清明";
+    } catch {}
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// 任意日期的离线兜底：节日正日标休，否则按周末/工作日划分；不伪造“调休上班”（只有国务院能定）
+function getLocalHoliday(dateStr: string): { name: string | null; isHoliday: boolean; isWorkday: boolean; type: string } {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const festival = Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d) ? pickLocalFestival(y, m, d) : null;
+  if (festival) return { name: festival, isHoliday: true, isWorkday: false, type: "holiday" };
+  const w = new Date(dateStr + "T12:00:00").getDay();
+  const isWeekend = w === 0 || w === 6;
+  return { name: null, isHoliday: isWeekend, isWorkday: false, type: isWeekend ? "weekend" : "workday" };
+}
+
+function isWeekdayName(name: string | null): boolean {
+  return !!name && /^周[一二三四五六日]$/.test(name);
+}
 
 const LUNAR_DAYS = ["初一", "初二", "初三", "初四", "初五", "初六", "初七", "初八", "初九", "初十", "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十", "廿一", "廿二", "廿三", "廿四", "廿五", "廿六", "廿七", "廿八", "廿九", "三十"];
 
@@ -180,10 +166,16 @@ export async function GET(req: NextRequest) {
         }
       }
     } catch {}
-    // 降级：本地库
-    const list = [...HOLIDAY_2025, ...HOLIDAY_2026].filter((h) => h.date.startsWith(String(year)));
+    // 降级：按农历/阳历/节气逐日推算节日正日，任意年份有效（只标正日，不伪造调休连休）
     const map: Record<string, unknown> = {};
-    for (const h of list) map[h.date.slice(5)] = { name: h.name, type: h.type };
+    for (let m = 1; m <= 12; m++) {
+      const daysInMonth = new Date(year, m, 0).getDate();
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${year}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        const festival = pickLocalFestival(year, m, d);
+        if (festival) map[dateStr.slice(5)] = { name: festival, type: "holiday" };
+      }
+    }
     return NextResponse.json({ year, data: map, source: "local", updateTime: new Date().toISOString() }, { headers: { "Cache-Control": "public, s-maxage=3600" } });
   }
 
@@ -237,60 +229,22 @@ export async function GET(req: NextRequest) {
     } catch {}
   }
 
-  // 3. 尝试 oioweb 万年历（含农历与节假日）
-  let oiowebLunar: unknown = null;
-  if (!raw) {
-    try {
-      const r = await fetchWithTimeout(`https://api.oioweb.cn/api/common/calendar?date=${dateStr}`, 2500);
-      if (r.ok) {
-        const j = (await r.json()) as { code?: number; result?: unknown };
-        if (j?.result) {
-          oiowebLunar = j.result;
-          // 若包含 holiday 信息则一并解析
-          const res = j.result as Record<string, unknown>;
-          if (res.holiday || res.festival) {
-            const name = (res.holiday as string) || (res.festival as string) || null;
-            if (name) {
-              holiday = { name: String(name), isHoliday: true, isWorkday: false, type: "holiday" };
-              source = "oioweb";
-              raw = j;
-            }
-          }
-        }
-      }
-    } catch {}
-  }
-
-  // 4. 本地兜底
-  if (!holiday) {
-    const hit = HOLIDAY_MAP.get(dateStr);
-    if (hit) {
-      holiday = { name: hit.name, isHoliday: hit.type === "holiday", isWorkday: hit.type === "workday", type: hit.type };
-    } else {
-      // 周末判断
-      const d = new Date(dateStr + "T12:00:00");
-      const w = d.getDay();
-      const isWeekend = w === 0 || w === 6;
-      holiday = { name: null, isHoliday: isWeekend, isWorkday: false, type: isWeekend ? "weekend" : "workday" };
+  // 3. 本地兜底 + 线上校准：timor 没公布的年份只会回“周X”，此时用农历节日名覆盖（如 2027 春节）
+  {
+    const local = getLocalHoliday(dateStr);
+    if (!holiday || (isWeekdayName(holiday.name) && local.name)) {
+      holiday = local;
     }
-    if (source === "local" && !raw) source = "local";
   }
 
   const lunar = getLunar(dateStr);
-
-  // 额外：若 oioweb 有更丰富的农历则覆盖，但保留 Intl 作为主
-  if (oiowebLunar && typeof oiowebLunar === "object") {
-    const o = oiowebLunar as Record<string, unknown>;
-    // oioweb 字段：lunar_year, lunar_month, lunar_day, zodiac, ganzhi 等，保留作为补充
-    // 不覆盖主 lunar.text，以 Intl 为准保证一致性
-  }
 
   return NextResponse.json(
     {
       date: dateStr,
       lunar,
       holiday,
-      raw: raw ?? oiowebLunar ?? null,
+      raw: raw ?? null,
       source,
       updateTime: new Date().toISOString(),
     },

@@ -44,6 +44,7 @@ function getLunarLocal(dateStr: string): LunarInfo {
 function formatDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+
 function parseDate(s: string): Date {
   const [y, m, d] = s.split("-").map(Number);
   return new Date(y, m - 1, d, 12, 0, 0);
@@ -435,14 +436,6 @@ export function CalendarPanel({ open, onClose }: { open: boolean; onClose: () =>
                   ) : (
                     <p className="mt-2 whitespace-nowrap text-xs tracking-tight text-zinc-500 dark:text-zinc-500 sm:mt-2.5 sm:text-sm">{detail?.holiday?.isHoliday ? "休息日" : detail?.holiday?.isWorkday ? "工作日" : (selectedDate.getDay() === 0 || selectedDate.getDay() === 6) ? "休息日" : "工作日"}</p>
                   )}
-                  <div className="mt-3 border-t border-zinc-200 pt-2.5 dark:border-zinc-700 sm:mt-4 sm:pt-3">
-                    <div className="text-xs font-semibold tracking-tight text-zinc-500 dark:text-zinc-400 sm:text-[13px]" id="calendar-yiji-title">宜忌</div>
-                    <div className="mt-1 text-xs leading-relaxed tracking-tight text-zinc-600 dark:text-zinc-400 sm:mt-1.5 sm:text-[13px]" aria-labelledby="calendar-yiji-title">
-                      宜：出行 嫁娶
-                      <br />
-                      忌：动土
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>

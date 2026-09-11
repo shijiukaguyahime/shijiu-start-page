@@ -3,11 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// 国内免费天气API（优先）与开放 fallback
-// 1) vvhan 免费天气  https://api.vvhan.com/api/weather?city=北京  (国内，无需Key)
-// 2) oioweb 天气    https://api.oioweb.cn/api/weather/weather?city_name=北京
-// 3) 高德天气       https://restapi.amap.com/v3/weather/weatherInfo  (国内，需Key，免费额度)
-// 4) Open-Meteo    https://api.open-meteo.com  (国际开放，兜底，保证可用性)
+// 天气数据源：Open-Meteo（国际开放、无需 Key，实测可用），地理编码走 open-meteo 自家接口。
+// 注：曾尝试的 vvhan / oioweb 已实测失效（超时/断连），且从未参与组装数据——已删除，
+// 避免白白增加延迟和误导性的 source 标注。取不到就如实报错，不编造天气。
 
 const WMO_TEXT: Record<number, string> = {
   0: "晴",
@@ -41,7 +39,7 @@ const WMO_TEXT: Record<number, string> = {
 };
 
 function wmoToText(code: number): string {
-  return WMO_TEXT[code] ?? "多云";
+  return WMO_TEXT[code] ?? "未知";
 }
 
 function wmoToIcon(code: number): string {
@@ -54,7 +52,8 @@ function wmoToIcon(code: number): string {
   if (code <= 77) return "❄️";
   if (code <= 82) return "🌧️";
   if (code <= 86) return "🌨️";
-  return "⛈️";
+  if (code >= 95) return "⛈️";
+  return "☁️";
 }
 
 // 主要城市经纬度，避免额外地理编码请求
@@ -111,41 +110,6 @@ async function fetchWithTimeout(url: string, ms = 3500) {
   }
 }
 
-async function tryVvhan(city: string) {
-  try {
-    const r = await fetchWithTimeout(`https://api.vvhan.com/api/weather?city=${encodeURIComponent(city)}`, 3500);
-    if (!r.ok) return null;
-    const j = (await r.json()) as unknown;
-    // vvhan 格式：{success:true, city, data:{...}} 或 {code:200, data:{...}}
-    const obj = j as Record<string, unknown>;
-    const data = (obj.data ?? obj.info ?? obj.result) as Record<string, unknown> | undefined;
-    if (!data) return null;
-    // 尝试提取当前与预报
-    // 若结构不符合预期则放弃
-    const currentRaw = (data.current ?? data.now ?? data.real) as Record<string, unknown> | undefined;
-    const forecastRaw = (data.forecast ?? data.future ?? data.daily) as unknown[] | undefined;
-    if (!currentRaw && !Array.isArray(forecastRaw)) return null;
-    return { raw: j, parsed: { currentRaw, forecastRaw } };
-  } catch {
-    return null;
-  }
-}
-
-async function tryOioweb(city: string) {
-  try {
-    const r = await fetchWithTimeout(`https://api.oioweb.cn/api/weather/weather?city_name=${encodeURIComponent(city)}`, 3500);
-    if (!r.ok) return null;
-    const j = (await r.json()) as Record<string, unknown>;
-    if (j.code !== 200 && (j as { success?: boolean }).success !== true) {
-      // 部分版本返回 {code:1, result:...}
-      if (!j.result) return null;
-    }
-    return j;
-  } catch {
-    return null;
-  }
-}
-
 async function geocodeCity(city: string): Promise<{ lat: number; lon: number; name: string } | null> {
   if (CITY_LATLNG[city]) {
     const v = CITY_LATLNG[city];
@@ -186,61 +150,30 @@ async function reverseGeocode(lat: number, lon: number): Promise<string | null> 
 
 type DailyItem = { date: string; max: number; min: number; code: number; text: string; icon: string };
 
-function mockDaily(base: number, days = 14): DailyItem[] {
-  const today = new Date();
-  return Array.from({ length: days }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(today.getDate() + i);
-    const iso = d.toISOString().slice(0, 10);
-    const max = base + Math.round(Math.sin(i) * 3 + (i % 2));
-    const min = max - 8 - (i % 3);
-    const codes = [0, 1, 2, 3, 61, 80, 95];
-    const code = codes[i % codes.length];
-    return { date: iso, max, min, code, text: wmoToText(code), icon: wmoToIcon(code) };
-  });
-}
-
 export async function GET(req: NextRequest) {
-  const cityParam = req.nextUrl.searchParams.get("city")?.trim() || "北京";
-  const city = cityParam === "auto" ? "上海" : cityParam;
+  const cityParam = req.nextUrl.searchParams.get("city")?.trim() || "上海";
   const latParam = req.nextUrl.searchParams.get("lat");
   const lonParam = req.nextUrl.searchParams.get("lon");
 
-  // 1. 尝试国内免费 API（vvhan / oioweb）—— 网络受限时自动跳过
-  // vvhan / oioweb 若成功则优先返回，失败则降级至 Open-Meteo
-  // 为保证可观测性，仍保留尝试逻辑
-
-  // 尝试 vvhan 解析（若成功且结构可识别则使用，否则忽略）
-  // 注意：vvhan 返回结构多样，此处仅作尝试，不阻塞主链路
-  let vvhanHit: unknown = null;
-  try {
-    const v = await tryVvhan(city);
-    if (v) vvhanHit = v.raw;
-  } catch {}
-
-  let oiowebHit: unknown = null;
-  try {
-    const o = await tryOioweb(city);
-    if (o) oiowebHit = o;
-  } catch {}
-
-  // 2. 主链路：Open-Meteo（开放且稳定，兜底保证可用）
   try {
     let lat: number;
     let lon: number;
-    let resolvedCity = city;
+    let resolvedCity: string;
     const qLat = latParam ? Number(latParam) : NaN;
     const qLon = lonParam ? Number(lonParam) : NaN;
     if (Number.isFinite(qLat) && Number.isFinite(qLon)) {
       lat = qLat;
       lon = qLon;
-      const rev = await reverseGeocode(lat, lon);
-      if (rev) resolvedCity = rev;
+      // 逆解析失败不用默认城市名顶替，用坐标标注，避免张冠李戴
+      resolvedCity = (await reverseGeocode(lat, lon)) ?? `${lat.toFixed(2)}°, ${lon.toFixed(2)}°`;
     } else {
-      const geo = await geocodeCity(city);
-      lat = geo?.lat ?? 39.9042;
-      lon = geo?.lon ?? 116.4074;
-      resolvedCity = geo?.name ?? city;
+      const geo = await geocodeCity(cityParam);
+      if (!geo) {
+        return NextResponse.json({ error: `未能解析城市“${cityParam}”，请检查名称或稍后重试` }, { status: 404 });
+      }
+      lat = geo.lat;
+      lon = geo.lon;
+      resolvedCity = geo.name;
     }
 
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code,relative_humidity_2m,wind_speed_10m,apparent_temperature&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max&timezone=Asia/Shanghai&forecast_days=14`;
@@ -253,31 +186,29 @@ export async function GET(req: NextRequest) {
 
     const cur = j.current;
     const daily = j.daily;
+    // 上游缺字段就报错，不用 26°晴之类的假数据顶替
+    if (!cur || !daily?.time) throw new Error("open-meteo 返回缺失 current/daily");
 
-    const current = cur
-      ? {
-          temp: Math.round(cur.temperature_2m),
-          feelsLike: Math.round(cur.apparent_temperature ?? cur.temperature_2m),
-          humidity: cur.relative_humidity_2m,
-          wind: cur.wind_speed_10m,
-          code: cur.weather_code,
-          text: wmoToText(cur.weather_code),
-          icon: wmoToIcon(cur.weather_code),
-          time: cur.time,
-        }
-      : { temp: 26, feelsLike: 27, humidity: 60, wind: 5, code: 0, text: "晴", icon: "☀️", time: new Date().toISOString() };
+    const current = {
+      temp: Math.round(cur.temperature_2m),
+      feelsLike: Math.round(cur.apparent_temperature ?? cur.temperature_2m),
+      humidity: cur.relative_humidity_2m,
+      wind: cur.wind_speed_10m,
+      code: cur.weather_code,
+      text: wmoToText(cur.weather_code),
+      icon: wmoToIcon(cur.weather_code),
+      time: cur.time,
+    };
 
-    const dailyList: DailyItem[] = daily?.time
-      ? daily.time.map((d, i) => ({
-          date: d,
-          max: Math.round(daily.temperature_2m_max[i]),
-          min: Math.round(daily.temperature_2m_min[i]),
-          code: daily.weather_code[i],
-          text: wmoToText(daily.weather_code[i]),
-          icon: wmoToIcon(daily.weather_code[i]),
-          precip: daily.precipitation_probability_max?.[i] ?? null,
-        }))
-      : mockDaily(current.temp);
+    const dailyList: DailyItem[] = daily.time.map((d, i) => ({
+      date: d,
+      max: Math.round(daily.temperature_2m_max[i]),
+      min: Math.round(daily.temperature_2m_min[i]),
+      code: daily.weather_code[i],
+      text: wmoToText(daily.weather_code[i]),
+      icon: wmoToIcon(daily.weather_code[i]),
+      precip: daily.precipitation_probability_max?.[i] ?? null,
+    }));
 
     return NextResponse.json(
       {
@@ -286,31 +217,13 @@ export async function GET(req: NextRequest) {
         lon,
         current,
         daily: dailyList,
-        source: vvhanHit ? "vvhan+open-meteo" : oiowebHit ? "oioweb+open-meteo" : "open-meteo",
+        source: "open-meteo",
         updateTime: new Date().toISOString(),
-        domestic: {
-          vvhan: vvhanHit ? "hit" : "miss",
-          oioweb: oiowebHit ? "hit" : "miss",
-        },
       },
       { headers: { "Cache-Control": "public, s-maxage=600, stale-while-revalidate=1200" } },
     );
   } catch (e) {
-    // 极端降级：本地 Mock，保证 UI 不白屏
-    const now = new Date();
-    const fallbackCurrent = { temp: 26, feelsLike: 28, humidity: 55, wind: 3.2, code: 1, text: "晴间多云", icon: "🌤️", time: now.toISOString() };
-    return NextResponse.json(
-      {
-        city,
-        lat: 39.9042,
-        lon: 116.4074,
-        current: fallbackCurrent,
-        daily: mockDaily(fallbackCurrent.temp),
-        source: "mock",
-        updateTime: now.toISOString(),
-        error: String(e),
-      },
-      { headers: { "Cache-Control": "no-store" } },
-    );
+    // 取不到就如实报错（前端会显示错误态），不返回假天气
+    return NextResponse.json({ error: "天气获取失败，请稍后重试", detail: String(e) }, { status: 502, headers: { "Cache-Control": "no-store" } });
   }
 }
