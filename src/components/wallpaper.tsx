@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { WALLPAPER_BLUR_KEY, WALLPAPER_BRIGHTNESS_KEY } from "@/lib/theme";
+import { WALLPAPER_BLUR_DEFAULT, WALLPAPER_BRIGHTNESS_KEY, readWallpaperBlur } from "@/lib/theme";
 
 const DEFAULT_WALLPAPER = "/default_bg.avif";
 export const WALLPAPER_KEY = "startpage:wallpaper";
@@ -121,7 +121,7 @@ export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
   const [url, setUrl] = useState(DEFAULT_WALLPAPER);
   const [loaded, setLoaded] = useState(false);
   const [brightness, setBrightness] = useState(90);
-  const [blur, setBlur] = useState(100);
+  const [blur, setBlur] = useState(WALLPAPER_BLUR_DEFAULT);
   const requestSeqRef = useRef(0);
 
   useEffect(() => {
@@ -130,22 +130,7 @@ export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
       if (Number.isFinite(v) && v !== 0) setBrightness(Math.min(120, Math.max(70, v)));
       else setBrightness(90);
     };
-    const applyBlur = () => {
-      const raw = localStorage.getItem(WALLPAPER_BLUR_KEY);
-      if (raw === null) {
-        setBlur(100);
-        return;
-      }
-      const v = Number(raw);
-      // 旧默认 0 迁移至 100
-      if (!Number.isFinite(v) || v === 0) {
-        setBlur(100);
-        // 同步回写，避免下次仍为 0
-        localStorage.setItem(WALLPAPER_BLUR_KEY, "100");
-        return;
-      }
-      setBlur(Math.min(100, Math.max(0, v)));
-    };
+    const applyBlur = () => setBlur(readWallpaperBlur());
 
     // 仅全新页面加载时随机解析一次，storage/事件监听触发的二次加载只采用已解析的具体图，避免多窗口历史写入触发循环解析
     const applyWallpaper = async (initialMount: boolean) => {

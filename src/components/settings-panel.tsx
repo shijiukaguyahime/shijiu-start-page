@@ -46,6 +46,7 @@ import {
   applyGlassTokens,
   readGlassOpacity,
   readTheme,
+  readWallpaperBlur,
   resolveTheme,
   type ThemeMode,
 } from "@/lib/theme";
@@ -236,15 +237,7 @@ function AppearancePane() {
     if (!Number.isFinite(v) || v === 0) return 90;
     return Math.min(120, Math.max(70, v));
   });
-  const [blur, setBlur] = useState<number>(() => {
-    if (typeof window === "undefined") return 100;
-    const raw = localStorage.getItem(WALLPAPER_BLUR_KEY);
-    if (raw === null) return 100;
-    const v = Number(raw);
-    // 旧默认 0 迁移至 100
-    if (!Number.isFinite(v) || v === 0) return 100;
-    return Math.min(100, Math.max(0, v));
-  });
+  const [blur, setBlur] = useState<number>(() => readWallpaperBlur());
 
   useEffect(() => {
     localStorage.setItem(THEME_KEY, theme);
