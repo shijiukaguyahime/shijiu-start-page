@@ -6,30 +6,24 @@ import { MagnifyingGlassIcon, XIcon, ClockIcon } from "@phosphor-icons/react";
 import { SEARCH_ENGINES, type SearchEngine } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { limeDropdownMotion, useClickOutside } from "@/lib/hooks";
+import {
+  ENGINE_KEY,
+  clearHistory as clearStoredHistory,
+  loadEngineId,
+  loadEngines,
+  loadHistory,
+  loadShowHistory,
+  removeHistory as removeStoredHistory,
+  resolveEngine,
+  saveHistory,
+} from "@/lib/search";
 
-const ENGINE_KEY = "startpage:engine";
-const HISTORY_KEY = "startpage:searchHistory";
+const REVEAL_BASE = "gpu flex shrink-0 items-center justify-center overflow-hidden rounded-full aspect-square transition-[width,opacity,transform,filter] duration-[340ms] ease-[var(--spring)]";
+const REVEAL_SHOWN = "opacity-100 scale-100 blur-0 translate-x-0";
+const REVEAL_HIDDEN = "opacity-0 scale-[0.82] blur-[5px] pointer-events-none";
 
 function isLikelyUrl(q: string) {
   return /^(https?:\/\/)?([\w-]+\.)+[a-z]{2,}(:\d+)?(\/\S*)?$/i.test(q.trim());
-}
-
-function loadHistory(): string[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(HISTORY_KEY);
-    return raw ? (JSON.parse(raw) as string[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveHistory(q: string) {
-  if (!q.trim()) return;
-  const cur = loadHistory();
-  const next = [q.trim(), ...cur.filter((x) => x !== q.trim())].slice(0, 20);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-  window.dispatchEvent(new Event("search-history-change"));
 }
 
 type Props = {
@@ -43,48 +37,27 @@ export function SearchBox({ onFocusChange }: Props) {
   const [engine, setEngine] = useState<SearchEngine>(SEARCH_ENGINES[0]);
   const [focused, setFocused] = useState(false);
   const [history, setHistory] = useState<string[]>(() => loadHistory());
-  const [showHistoryEnabled, setShowHistoryEnabled] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    const v = localStorage.getItem("startpage:showSearchHistory");
-    return v === null ? true : v === "true";
-  });
+  const [showHistoryEnabled, setShowHistoryEnabled] = useState<boolean>(() => loadShowHistory());
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion();
 
-  const loadEngines = () => {
-    try {
-      const raw = localStorage.getItem("startpage:engines");
-      if (raw) {
-        const arr = JSON.parse(raw) as SearchEngine[];
-        if (Array.isArray(arr) && arr.length) {
-          setEngines(arr);
-          const saved = localStorage.getItem(ENGINE_KEY);
-          const found = arr.find((e) => e.id === saved);
-          if (found) setEngine(found);
-          else setEngine(arr[0]);
-          return;
-        }
-      }
-    } catch {}
-    const saved = localStorage.getItem(ENGINE_KEY);
-    const found = SEARCH_ENGINES.find((e) => e.id === saved);
-    if (found) setEngine(found);
-    else setEngines(SEARCH_ENGINES);
+  const applyEngineConfig = () => {
+    const list = loadEngines();
+    setEngines(list);
+    setEngine(resolveEngine(list, loadEngineId()));
   };
 
   useEffect(() => {
-    loadEngines();
+    applyEngineConfig();
     setHistory(loadHistory());
-    const v = localStorage.getItem("startpage:showSearchHistory");
-    setShowHistoryEnabled(v === null ? true : v === "true");
+    setShowHistoryEnabled(loadShowHistory());
     const onHistory = () => {
       setHistory(loadHistory());
-      const vv = localStorage.getItem("startpage:showSearchHistory");
-      setShowHistoryEnabled(vv === null ? true : vv === "true");
+      setShowHistoryEnabled(loadShowHistory());
     };
-    const onEngine = () => loadEngines();
+    const onEngine = () => applyEngineConfig();
     window.addEventListener("storage", onHistory);
     window.addEventListener("search-history-change" as never, onHistory);
     window.addEventListener("engine-change" as never, onEngine);
@@ -145,18 +118,14 @@ export function SearchBox({ onFocusChange }: Props) {
   function removeHistory(q: string, e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    const next = history.filter((x) => x !== q);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-    setHistory(next);
-    window.dispatchEvent(new Event("search-history-change"));
+    setHistory(removeStoredHistory(q));
   }
 
   function clearAllHistory(e?: React.MouseEvent) {
     e?.preventDefault();
     e?.stopPropagation();
-    localStorage.removeItem(HISTORY_KEY);
+    clearStoredHistory();
     setHistory([]);
-    window.dispatchEvent(new Event("search-history-change"));
   }
 
   function submit() {
@@ -205,11 +174,7 @@ export function SearchBox({ onFocusChange }: Props) {
             e.stopPropagation();
             setShowEngines((v) => !v);
           }}
-          className={cn(
-            "gpu flex shrink-0 items-center justify-center overflow-hidden rounded-full aspect-square",
-            "transition-[width,opacity,transform,filter] duration-[340ms] ease-[var(--spring)]",
-            isActive ? "w-9 opacity-100 scale-100 blur-0 translate-x-0" : "w-0 opacity-0 scale-[0.82] blur-[5px] -translate-x-1 pointer-events-none",
-          )}
+          className={cn(REVEAL_BASE, isActive ? `w-9 ${REVEAL_SHOWN}` : `w-0 -translate-x-1 ${REVEAL_HIDDEN}`)}
         >
           <span
             className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/70 text-[11px] font-bold tracking-wide text-zinc-600 shadow-sm ring-1 ring-black/5 dark:bg-zinc-700 dark:text-zinc-300 dark:ring-white/10"
@@ -258,9 +223,9 @@ export function SearchBox({ onFocusChange }: Props) {
             clearQuery();
           }}
           className={cn(
-            "gpu flex shrink-0 items-center justify-center overflow-hidden rounded-full aspect-square text-black/50 shadow-sm hover:bg-black/20 hover:text-white active:scale-[0.96] dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white",
-            "transition-[width,opacity,transform,filter] duration-[340ms] ease-[var(--spring)]",
-            showClear ? "w-6 opacity-100 scale-100 blur-0 translate-x-0" : "w-0 opacity-0 scale-[0.82] blur-[5px] translate-x-1 pointer-events-none",
+            REVEAL_BASE,
+            "text-black/50 shadow-sm hover:bg-black/20 hover:text-white active:scale-[0.96] dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white",
+            showClear ? `w-6 ${REVEAL_SHOWN}` : `w-0 translate-x-1 ${REVEAL_HIDDEN}`,
           )}
         >
           <XIcon weight="bold" className="size-[12px] shrink-0" aria-hidden />
@@ -272,9 +237,9 @@ export function SearchBox({ onFocusChange }: Props) {
           tabIndex={isActive ? 0 : -1}
           onClick={submit}
           className={cn(
-            "gpu flex shrink-0 items-center justify-center overflow-hidden rounded-full aspect-square text-black/50 shadow-sm hover:bg-black/80 hover:text-white active:scale-[0.96] dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white",
-            "transition-[width,opacity,transform,filter] duration-[340ms] ease-[var(--spring)] delay-[28ms]",
-            isActive ? "w-9 opacity-100 scale-100 blur-0 translate-x-0" : "w-0 opacity-0 scale-[0.82] blur-[5px] translate-x-1 pointer-events-none",
+            REVEAL_BASE,
+            "text-black/50 shadow-sm hover:bg-black/80 hover:text-white active:scale-[0.96] dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white delay-[28ms]",
+            isActive ? `w-9 ${REVEAL_SHOWN}` : `w-0 translate-x-1 ${REVEAL_HIDDEN}`,
           )}
         >
           <MagnifyingGlassIcon weight="bold" className="size-[18px] shrink-0" aria-hidden />

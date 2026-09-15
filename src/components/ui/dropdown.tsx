@@ -23,39 +23,52 @@ type Props = {
   selectedKey?: string;
   id?: string;
   ariaLabel?: string;
+  triggerRef?: React.RefObject<HTMLElement | null>;
 };
 
 /** portal 到 body，避免被父级 transform 截获 fixed */
-export function DropdownMenu({ open, onClose, items, anchor, className, selectedKey, id, ariaLabel }: Props) {
+export function DropdownMenu({ open, onClose, items, anchor, className, selectedKey, id, ariaLabel, triggerRef }: Props) {
   const reduce = useReducedMotion();
   const ref = useRef<HTMLDivElement>(null);
+  const firstItemKey = items[0]?.key;
+  const [activeKey, setActiveKey] = useState<string | undefined>(selectedKey ?? firstItemKey);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
-  useClickOutside(ref as React.RefObject<HTMLElement | null>, () => onClose(), open);
+  const closeMenu = () => {
+    onClose();
+    requestAnimationFrame(() => triggerRef?.current?.focus());
+  };
+
+  useClickOutside(ref as React.RefObject<HTMLElement | null>, closeMenu, open);
+
+  useEffect(() => {
+    if (!open) return;
+    setActiveKey(selectedKey ?? firstItemKey);
+  }, [open, selectedKey, firstItemKey]);
 
   useLayoutEffect(() => {
-    if (!open || !ref.current) return;
+    if (!mounted || !open || !ref.current) return;
     const tryFocus = () => {
       if (!ref.current) return;
       const escape = typeof CSS !== "undefined" && CSS.escape ? CSS.escape : (s: string) => s.replace(/"/g, '\\"');
-      const key = selectedKey ?? items[0]?.key;
+      const key = selectedKey ?? firstItemKey;
       if (!key) return;
       const el = ref.current.querySelector<HTMLElement>(`[data-key="${escape(key)}"]`);
       if (el) {
-        el.focus();
+        el.focus({ preventScroll: true });
         el.scrollIntoView({ block: "nearest", inline: "nearest" });
       }
     };
     // 等待定位与动画后聚焦
     const id = requestAnimationFrame(() => requestAnimationFrame(tryFocus));
     return () => cancelAnimationFrame(id);
-  }, [open, selectedKey, items]);
+  }, [mounted, open, selectedKey, firstItemKey]);
 
   useLayoutEffect(() => {
-    if (!open || !anchor) {
+    if (!mounted || !open || !anchor) {
       setPos(null);
       return;
     }
@@ -80,7 +93,7 @@ export function DropdownMenu({ open, onClose, items, anchor, className, selected
       top = Math.min(Math.max(pad, top), window.innerHeight - rect.height - pad);
       setPos({ left, top });
     });
-  }, [open, anchor]);
+  }, [mounted, open, anchor]);
 
   if (!mounted) return null;
 
@@ -128,9 +141,9 @@ export function DropdownMenu({ open, onClose, items, anchor, className, selected
               } else if (e.key === "End") {
                 e.preventDefault();
                 items[items.length - 1]?.focus();
-              } else if (e.key === "Escape") {
+              } else if (e.key === "Escape" || e.key === "Tab") {
                 e.preventDefault();
-                onClose();
+                closeMenu();
               }
             }}
             className={cn(
@@ -139,23 +152,25 @@ export function DropdownMenu({ open, onClose, items, anchor, className, selected
             )}
           >
           <ul className="space-y-0.5">
-            {items.map((it) => {
-              const isSelected = selectedKey != null && it.key === selectedKey;
-              return (
+             {items.map((it) => {
+               const isSelected = selectedKey != null && it.key === selectedKey;
+               return (
                 <li key={it.key} role="none">
                   <button
                     type="button"
                     role="menuitem"
                     data-key={it.key}
+                    tabIndex={it.key === activeKey ? 0 : -1}
                     aria-current={isSelected ? "true" : undefined}
+                    onFocus={() => setActiveKey(it.key)}
                     onMouseDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                     }}
                     onClick={(e) => {
-                      e.stopPropagation();
-                      it.onClick();
-                      onClose();
+                       e.stopPropagation();
+                       it.onClick();
+                       closeMenu();
                     }}
                     className={cn(
                       "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium transition-colors",
@@ -189,15 +204,4 @@ export function DropdownMenu({ open, onClose, items, anchor, className, selected
   );
 
   return createPortal(node, document.body);
-}
-
-/** 内联版下拉 */
-export function InlineDropdown({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return <div className={cn("dropdown-panel gpu overflow-hidden rounded-2xl p-1.5", className)}>{children}</div>;
 }

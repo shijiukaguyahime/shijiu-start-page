@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
   XIcon,
@@ -31,12 +31,35 @@ import {
 } from "@/components/wallpaper";
 import type { WallpaperValue } from "@/components/wallpaper";
 import Sortable from "sortablejs";
-import { DEFAULT_GROUPS, SEARCH_ENGINES, type Group, type SearchEngine, type Shortcut } from "@/lib/data";
+import type { Group, SearchEngine, Shortcut } from "@/lib/data";
 import { Modal } from "@/components/ui/modal";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { IconFormModal } from "@/components/ui/icon-form-modal";
 import { message } from "@/components/ui/message";
-import { addShortcut, removeShortcut, updateShortcut, saveGroups } from "@/lib/groups";
+import { GROUPS_KEY, ITEMS_KEY, addShortcut, loadGroups, removeShortcut, updateShortcut } from "@/lib/groups";
+import { useBodyScrollLock, useEscapeKey } from "@/lib/hooks";
+import {
+  GLASS_OPACITY_KEY,
+  THEME_KEY,
+  WALLPAPER_BLUR_KEY,
+  WALLPAPER_BRIGHTNESS_KEY,
+  applyGlassTokens,
+  readGlassOpacity,
+  readTheme,
+  resolveTheme,
+  type ThemeMode,
+} from "@/lib/theme";
+import {
+  ENGINE_KEY,
+  ENGINES_KEY,
+  SHOW_HISTORY_KEY,
+  clearHistory as clearStoredHistory,
+  loadEngineId,
+  loadEngines,
+  loadHistory,
+  loadShowHistory,
+  removeHistory,
+} from "@/lib/search";
 
 type TabId = "appearance" | "wallpaper" | "search" | "grid" | "data" | "about";
 
@@ -65,19 +88,8 @@ export function SettingsPanel({ open, onClose, initialTab = "appearance", onTabC
   };
   const reduce = useReducedMotion();
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [open, onClose]);
+  useEscapeKey(onClose, open);
+  useBodyScrollLock(open);
 
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -216,27 +228,17 @@ function Section({ title, desc, children }: { title: string; desc?: string; chil
 }
 
 function AppearancePane() {
-  const [theme, setTheme] = useState<"system" | "light" | "dark">(() => {
-    if (typeof window === "undefined") return "system";
-    return (localStorage.getItem("startpage:theme") as never) || "system";
-  });
-  const [glass, setGlass] = useState<number>(() => {
-    if (typeof window === "undefined") return 40;
-    const raw = localStorage.getItem("startpage:glassOpacity");
-    if (raw === null) return 40;
-    const v = Number(raw);
-    if (!Number.isFinite(v)) return 40;
-    return Math.min(80, Math.max(0, v));
-  });
+  const [theme, setTheme] = useState<ThemeMode>(() => readTheme());
+  const [glass, setGlass] = useState<number>(() => readGlassOpacity());
   const [brightness, setBrightness] = useState<number>(() => {
     if (typeof window === "undefined") return 90;
-    const v = Number(localStorage.getItem("startpage:wallpaperBrightness"));
+    const v = Number(localStorage.getItem(WALLPAPER_BRIGHTNESS_KEY));
     if (!Number.isFinite(v) || v === 0) return 90;
     return Math.min(120, Math.max(70, v));
   });
   const [blur, setBlur] = useState<number>(() => {
     if (typeof window === "undefined") return 100;
-    const raw = localStorage.getItem("startpage:wallpaperBlur");
+    const raw = localStorage.getItem(WALLPAPER_BLUR_KEY);
     if (raw === null) return 100;
     const v = Number(raw);
     // 旧默认 0 迁移至 100
@@ -245,31 +247,18 @@ function AppearancePane() {
   });
 
   useEffect(() => {
-    localStorage.setItem("startpage:theme", theme);
-    const root = document.documentElement;
-    const mql2 = window.matchMedia("(prefers-color-scheme: dark)");
-    const resolved2 = theme === "system" ? (mql2.matches ? "dark" : "light") : theme;
-    root.setAttribute("data-theme", resolved2);
+    localStorage.setItem(THEME_KEY, theme);
+    document.documentElement.setAttribute("data-theme", resolveTheme(theme));
     window.dispatchEvent(new Event("theme-change"));
     // 同步刷新毛玻璃基色以立即适配深浅
-    const glassRaw2 = localStorage.getItem("startpage:glassOpacity");
-    let glassVal: number;
-    if (glassRaw2 === null) glassVal = 40;
-    else {
-      const vv = Number(glassRaw2);
-      glassVal = !Number.isFinite(vv) || vv === 0 ? 40 : Math.min(80, Math.max(0, vv));
-    }
-    const isDarkNow = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    const base = isDarkNow ? "30,30,30" : "255,255,255";
-    const baseFocus = isDarkNow ? "40,40,40" : "255,255,255";
-    document.documentElement.style.setProperty("--glass-bg", `rgba(${base},${glassVal / 100})`);
-    document.documentElement.style.setProperty("--glass-bg-focus", `rgba(${baseFocus},${Math.min(0.72, glassVal / 100 + 0.16).toFixed(2)})`);
-    document.documentElement.style.setProperty("--glass-border", isDarkNow ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.5)");
+    const vv = Number(localStorage.getItem(GLASS_OPACITY_KEY));
+    const glassVal = !Number.isFinite(vv) || vv === 0 ? 40 : Math.min(80, Math.max(0, vv));
+    applyGlassTokens(resolveTheme(theme) === "dark", glassVal);
   }, [theme]);
 
   useEffect(() => {
     const onTheme = () => {
-      const saved = localStorage.getItem("startpage:theme") as typeof theme | null;
+      const saved = localStorage.getItem(THEME_KEY);
       if (saved === "light" || saved === "dark" || saved === "system") setTheme(saved);
     };
     window.addEventListener("storage", onTheme);
@@ -282,24 +271,18 @@ function AppearancePane() {
 
   const isDark = theme === "dark" || (theme === "system" && typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   useEffect(() => {
-    localStorage.setItem("startpage:glassOpacity", String(glass));
-    document.documentElement.style.setProperty("--glass-opacity", String(glass / 100));
-    const base = isDark ? "30,30,30" : "255,255,255";
-    const baseFocus = isDark ? "40,40,40" : "255,255,255";
-    const border = isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.5)";
-    document.documentElement.style.setProperty("--glass-bg", `rgba(${base},${glass / 100})`);
-    document.documentElement.style.setProperty("--glass-bg-focus", `rgba(${baseFocus},${Math.min(0.72, glass / 100 + 0.16).toFixed(2)})`);
-    document.documentElement.style.setProperty("--glass-border", border);
+    localStorage.setItem(GLASS_OPACITY_KEY, String(glass));
+    applyGlassTokens(isDark, glass);
   }, [glass, isDark]);
 
   useEffect(() => {
-    localStorage.setItem("startpage:wallpaperBrightness", String(brightness));
+    localStorage.setItem(WALLPAPER_BRIGHTNESS_KEY, String(brightness));
     document.documentElement.style.setProperty("--wallpaper-brightness", String(brightness / 100));
     window.dispatchEvent(new Event("wallpaper-brightness-change"));
   }, [brightness]);
 
   useEffect(() => {
-    localStorage.setItem("startpage:wallpaperBlur", String(blur));
+    localStorage.setItem(WALLPAPER_BLUR_KEY, String(blur));
     window.dispatchEvent(new Event("wallpaper-blur-change"));
   }, [blur]);
 
@@ -337,12 +320,8 @@ function AppearancePane() {
             onChange={(e) => {
               const v = Number(e.target.value);
               setGlass(v);
-              localStorage.setItem("startpage:glassOpacity", String(v));
-              const isDarkNow = document.documentElement.getAttribute("data-theme") === "dark";
-              const base = isDarkNow ? "30,30,30" : "255,255,255";
-              const baseFocus = isDarkNow ? "40,40,40" : "255,255,255";
-              document.documentElement.style.setProperty("--glass-bg", `rgba(${base},${v / 100})`);
-              document.documentElement.style.setProperty("--glass-bg-focus", `rgba(${baseFocus},${Math.min(0.72, v / 100 + 0.16).toFixed(2)})`);
+              localStorage.setItem(GLASS_OPACITY_KEY, String(v));
+              applyGlassTokens(document.documentElement.getAttribute("data-theme") === "dark", v);
             }}
             className="flex-1"
             style={{ accentColor: "var(--accent)" }}
@@ -360,7 +339,7 @@ function AppearancePane() {
             onChange={(e) => {
               const v = Number(e.target.value);
               setBrightness(v);
-              localStorage.setItem("startpage:wallpaperBrightness", String(v));
+              localStorage.setItem(WALLPAPER_BRIGHTNESS_KEY, String(v));
               document.documentElement.style.setProperty("--wallpaper-brightness", String(v / 100));
               window.dispatchEvent(new Event("wallpaper-brightness-change"));
             }}
@@ -380,7 +359,7 @@ function AppearancePane() {
             onChange={(e) => {
               const v = Number(e.target.value);
               setBlur(v);
-              localStorage.setItem("startpage:wallpaperBlur", String(v));
+              localStorage.setItem(WALLPAPER_BLUR_KEY, String(v));
               window.dispatchEvent(new Event("wallpaper-blur-change"));
             }}
             className="flex-1"
@@ -611,56 +590,25 @@ function WallpaperPane() {
 }
 
 function SearchPane() {
-  const [engineId, setEngineId] = useState<string>(() => {
-    if (typeof window === "undefined") return "bing";
-    return localStorage.getItem("startpage:engine") || "bing";
-  });
-  const [engines, setEngines] = useState<SearchEngine[]>(() => {
-    if (typeof window === "undefined") return SEARCH_ENGINES;
-    try {
-      const raw = localStorage.getItem("startpage:engines");
-      if (raw) {
-        const arr = JSON.parse(raw) as SearchEngine[];
-        if (Array.isArray(arr) && arr.length) return arr;
-      }
-    } catch {}
-    return SEARCH_ENGINES;
-  });
+  const [engineId, setEngineId] = useState<string>(() => loadEngineId());
+  const [engines, setEngines] = useState<SearchEngine[]>(() => loadEngines());
   const [newEngine, setNewEngine] = useState({ label: "", url: "", icon: "" });
   const [editing, setEditing] = useState<string | null>(null);
   const [editVal, setEditVal] = useState({ label: "", url: "", icon: "" });
-  const [history, setHistory] = useState<string[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const raw = localStorage.getItem("startpage:searchHistory");
-      return raw ? (JSON.parse(raw) as string[]) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [showHistory, setShowHistory] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    const v = localStorage.getItem("startpage:showSearchHistory");
-    return v === null ? true : v === "true";
-  });
+  const [history, setHistory] = useState<string[]>(() => loadHistory());
+  const [showHistory, setShowHistory] = useState<boolean>(() => loadShowHistory());
   const [pendingDeleteEngine, setPendingDeleteEngine] = useState<string | null>(null);
 
   useEffect(() => {
-    localStorage.setItem("startpage:showSearchHistory", String(showHistory));
+    localStorage.setItem(SHOW_HISTORY_KEY, String(showHistory));
     window.dispatchEvent(new Event("search-history-change"));
   }, [showHistory]);
 
   useEffect(() => {
     const onStorage = () => {
-      try {
-        const raw = localStorage.getItem("startpage:searchHistory");
-        setHistory(raw ? (JSON.parse(raw) as string[]) : []);
-      } catch {}
-      setEngineId(localStorage.getItem("startpage:engine") || "bing");
-      try {
-        const rawE = localStorage.getItem("startpage:engines");
-        if (rawE) setEngines(JSON.parse(rawE) as SearchEngine[]);
-      } catch {}
+      setHistory(loadHistory());
+      setEngineId(loadEngineId());
+      setEngines(loadEngines());
     };
     window.addEventListener("storage", onStorage);
     window.addEventListener("search-history-change" as never, onStorage);
@@ -674,12 +622,12 @@ function SearchPane() {
 
   const persistEngines = (next: SearchEngine[]) => {
     setEngines(next);
-    localStorage.setItem("startpage:engines", JSON.stringify(next));
+    localStorage.setItem(ENGINES_KEY, JSON.stringify(next));
     window.dispatchEvent(new Event("engine-change"));
   };
 
   const pickEngine = (id: string) => {
-    localStorage.setItem("startpage:engine", id);
+    localStorage.setItem(ENGINE_KEY, id);
     setEngineId(id);
     window.dispatchEvent(new Event("engine-change"));
   };
@@ -735,17 +683,13 @@ function SearchPane() {
     message.success("已删除");
   };
 
-  const clearHistory = () => {
-    localStorage.removeItem("startpage:searchHistory");
+  const clearSearchHistory = () => {
+    clearStoredHistory();
     setHistory([]);
-    window.dispatchEvent(new Event("search-history-change"));
   };
 
   const removeOne = (q: string) => {
-    const next = history.filter((x) => x !== q);
-    localStorage.setItem("startpage:searchHistory", JSON.stringify(next));
-    setHistory(next);
-    window.dispatchEvent(new Event("search-history-change"));
+    setHistory(removeHistory(q));
   };
 
   return (
@@ -844,7 +788,7 @@ function SearchPane() {
             <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">展示搜索历史</span>
           </label>
           {history.length > 0 && (
-            <button type="button" onClick={clearHistory} className="text-xs font-medium text-red-600 hover:text-red-700">
+            <button type="button" onClick={clearSearchHistory} className="text-xs font-medium text-red-600 hover:text-red-700">
               清空
             </button>
           )}
@@ -878,20 +822,7 @@ function SearchPane() {
 }
 
 function IconsPane() {
-  const [groups, setGroups] = useState<Group[]>(() => {
-    if (typeof window === "undefined") return DEFAULT_GROUPS;
-    try {
-      const raw = localStorage.getItem("startpage:groups") || localStorage.getItem("startpage:items");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed[0]?.shortcuts) return parsed as Group[];
-        if (Array.isArray(parsed) && parsed[0]?.url) {
-          return DEFAULT_GROUPS;
-        }
-      }
-    } catch {}
-    return DEFAULT_GROUPS;
-  });
+  const [groups, setGroups] = useState<Group[]>(() => loadGroups());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [showAddGroup, setShowAddGroup] = useState(false);
@@ -901,11 +832,12 @@ function IconsPane() {
   const [editIcon, setEditIcon] = useState<{ groupId: string; shortcut: Shortcut } | null>(null);
   const [deleteIcon, setDeleteIcon] = useState<{ groupId: string; shortcut: Shortcut } | null>(null);
   const gridRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const groupIdsKey = useMemo(() => groups.map((g) => g.id).join(","), [groups]);
 
   useEffect(() => {
-    localStorage.setItem("startpage:groups", JSON.stringify(groups));
+    localStorage.setItem(GROUPS_KEY, JSON.stringify(groups));
     const flat = groups.flatMap((g) => g.shortcuts);
-    localStorage.setItem("startpage:items", JSON.stringify(flat));
+    localStorage.setItem(ITEMS_KEY, JSON.stringify(flat));
     window.dispatchEvent(new Event("groups-change"));
   }, [groups]);
 
@@ -948,7 +880,7 @@ function IconsPane() {
     return () => {
       sortables.forEach((s) => s.destroy());
     };
-  }, [groups.map((g) => g.id).join(","), groups.length]);
+  }, [groupIdsKey]);
 
   const moveGroup = (idx: number, dir: -1 | 1) => {
     const next = [...groups];
@@ -1004,7 +936,6 @@ function IconsPane() {
     if (idx === -1) return;
     const { next } = addShortcut(groups, idx, data);
     setGroups(next);
-    saveGroups(next);
     setAddIconGroupId(null);
   };
 
@@ -1012,7 +943,6 @@ function IconsPane() {
     if (!editIcon) return;
     const next = updateShortcut(groups, editIcon.shortcut.id, data);
     setGroups(next);
-    saveGroups(next);
     setEditIcon(null);
   };
 
@@ -1020,7 +950,6 @@ function IconsPane() {
     if (!deleteIcon) return;
     const next = removeShortcut(groups, deleteIcon.shortcut.id);
     setGroups(next);
-    saveGroups(next);
     setDeleteIcon(null);
     message.success("已删除");
   };
@@ -1135,12 +1064,13 @@ function IconsPane() {
   );
 }
 
+const DATA_KEYS = ["startpage:wallpaper", "startpage:wallpaperHistory", "startpage:items", "startpage:groups", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness", "startpage:wallpaperBlur"] as const;
+
 function DataPane() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const exportJson = () => {
     const payload: Record<string, unknown> = { at: new Date().toISOString(), version: 1 };
-    const keys = ["startpage:wallpaper", "startpage:wallpaperHistory", "startpage:items", "startpage:groups", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness", "startpage:wallpaperBlur"];
-    for (const k of keys) {
+    for (const k of DATA_KEYS) {
       const v = localStorage.getItem(k);
       if (v !== null) {
         try {
@@ -1171,7 +1101,7 @@ function DataPane() {
       try {
         const j = JSON.parse(String(reader.result)) as Record<string, unknown>;
         if (j["startpage:wallpaper"] !== undefined || j["startpage:items"] !== undefined) {
-          for (const k of ["startpage:wallpaper", "startpage:wallpaperHistory", "startpage:items", "startpage:groups", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness", "startpage:wallpaperBlur"]) {
+          for (const k of DATA_KEYS) {
             if (j[k] !== undefined) {
               const v = j[k];
               localStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v));
@@ -1187,7 +1117,7 @@ function DataPane() {
           message.success("已导入，刷新后生效");
         } else {
           const toSave = (j as { groups?: unknown }).groups ?? j;
-          localStorage.setItem("startpage:items", JSON.stringify(toSave));
+          localStorage.setItem(ITEMS_KEY, JSON.stringify(toSave));
           message.success("已导入（兼容模式），刷新后生效");
         }
       } catch {
@@ -1199,7 +1129,7 @@ function DataPane() {
   };
 
   const doReset = () => {
-    for (const k of ["startpage:groups", "startpage:items", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:wallpaper", "startpage:wallpaperHistory", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness", "startpage:wallpaperBlur"]) {
+    for (const k of DATA_KEYS) {
       localStorage.removeItem(k);
     }
     localStorage.removeItem("startpage:glassBlur");

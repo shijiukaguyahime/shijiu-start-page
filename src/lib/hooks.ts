@@ -60,6 +60,69 @@ export function useClickOutside(
 }
 
 /**
+ * 统一的模态焦点陷阱
+ * - 打开时记录来源焦点并聚焦面板内首个可聚焦元素
+ * - Tab / Shift+Tab 在面板内循环
+ * - 关闭时把焦点还给来源元素
+ */
+export function useFocusTrap(ref: Ref, enabled = true) {
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!enabled) return;
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    const panel = ref.current;
+    if (!panel) return;
+
+    const getFocusable = () =>
+      Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => element.tabIndex >= 0 && element.getClientRects().length > 0);
+
+    const focusId = requestAnimationFrame(() => getFocusable()[0]?.focus());
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const focusable = getFocusable();
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    panel.addEventListener("keydown", onKeyDown as unknown as EventListener);
+    return () => {
+      cancelAnimationFrame(focusId);
+      panel.removeEventListener("keydown", onKeyDown as unknown as EventListener);
+      if (previousFocusRef.current && document.contains(previousFocusRef.current)) {
+        previousFocusRef.current.focus();
+      }
+    };
+  }, [ref, enabled]);
+}
+
+/** 打开时锁定 body 滚动，关闭时恢复原值 */
+export function useBodyScrollLock(enabled = true) {
+  useEffect(() => {
+    if (!enabled) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [enabled]);
+}
+
+/**
  * 单独的 Escape 监听，便于无外部点击需求的场景
  */
 export function useEscapeKey(handler: () => void, enabled = true) {

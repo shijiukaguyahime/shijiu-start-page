@@ -20,7 +20,7 @@ import {
   SnowflakeIcon,
   CloudFogIcon,
 } from "@phosphor-icons/react";
-import { useClickOutside, limeDropdownMotion } from "@/lib/hooks";
+import { useClickOutside, useEscapeKey, useFocusTrap, limeDropdownMotion } from "@/lib/hooks";
 
 type WeatherCurrent = { temp: number; feelsLike: number; humidity: number; wind: number; text: string; icon: string; code: number; time: string };
 type WeatherDaily = { date: string; max: number; min: number; text: string; icon: string; code: number; precip?: number | null };
@@ -32,6 +32,12 @@ const CITY_KEY = "startpage:weatherCity";
 function getStoredCity(): string {
   if (typeof window === "undefined") return "";
   return localStorage.getItem(CITY_KEY) || "";
+}
+
+async function requestWeather(url: string): Promise<WeatherData> {
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(`请求失败 ${r.status}`);
+  return (await r.json()) as WeatherData;
 }
 
 function WeatherPhosphorIcon({ code, size = 20 }: { code: number; size?: number }) {
@@ -63,7 +69,6 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
   const [forecastPage, setForecastPage] = useState(0);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const titleId = "weather-title";
-  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   // 每次打开重置到“今天”，避免上次浏览的分页/选中日期残留
   useEffect(() => {
@@ -77,14 +82,12 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
     let cancelled = false;
     const stored = getStoredCity();
 
-    const fetchByCity = async (c: string) => {
+    const applyWeather = async (url: string) => {
       if (cancelled) return;
       setLoading(true);
       setError(null);
       try {
-        const r = await fetch(`/api/weather?city=${encodeURIComponent(c)}`, { cache: "no-store" });
-        if (!r.ok) throw new Error(`请求失败 ${r.status}`);
-        const j = (await r.json()) as WeatherData;
+        const j = await requestWeather(url);
         if (cancelled) return;
         setData(j);
         setCity(j.city);
@@ -97,25 +100,8 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
       }
     };
 
-    const fetchByCoords = async (lat: number, lon: number) => {
-      if (cancelled) return;
-      setLoading(true);
-      setError(null);
-      try {
-        const r = await fetch(`/api/weather?lat=${lat}&lon=${lon}`, { cache: "no-store" });
-        if (!r.ok) throw new Error(`请求失败 ${r.status}`);
-        const j = (await r.json()) as WeatherData;
-        if (cancelled) return;
-        setData(j);
-        setCity(j.city);
-        setSelectedDate(j.daily[0]?.date ?? null);
-        localStorage.setItem(CITY_KEY, j.city);
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "获取失败");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
+    const fetchByCity = (c: string) => applyWeather(`/api/weather?city=${encodeURIComponent(c)}`);
+    const fetchByCoords = (lat: number, lon: number) => applyWeather(`/api/weather?lat=${lat}&lon=${lon}`);
 
     const tryIp = async (): Promise<boolean> => {
       try {
@@ -168,9 +154,7 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
     setError(null);
     setForecastPage(0);
     try {
-      const r = await fetch(`/api/weather?city=${encodeURIComponent(targetCity)}`, { cache: "no-store" });
-      if (!r.ok) throw new Error(`请求失败 ${r.status}`);
-      const j = (await r.json()) as WeatherData;
+      const j = await requestWeather(`/api/weather?city=${encodeURIComponent(targetCity)}`);
       setData(j);
       setCity(j.city);
       setSelectedDate(j.daily[0]?.date ?? null);
@@ -184,47 +168,8 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
   };
 
   useClickOutside(panelRef as React.RefObject<HTMLElement | null>, () => onClose(), open, { ignoreSelectors: ["[data-dock]"] });
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  useEffect(() => {
-    if (!open) return;
-    previousFocusRef.current = document.activeElement as HTMLElement | null;
-    const panel = panelRef.current;
-    if (!panel) return;
-    const focusable = panel.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    );
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    requestAnimationFrame(() => first?.focus());
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Tab" || focusable.length === 0) return;
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else if (document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    panel.addEventListener("keydown", onKeyDown as unknown as EventListener);
-    return () => {
-      panel.removeEventListener("keydown", onKeyDown as unknown as EventListener);
-      if (previousFocusRef.current && document.contains(previousFocusRef.current)) {
-        previousFocusRef.current.focus();
-      }
-    };
-  }, [open]);
+  useEscapeKey(onClose, open);
+  useFocusTrap(panelRef as React.RefObject<HTMLElement | null>, open);
 
   const handleSearch = () => {
     const v = inputCity.trim();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { Wallpaper } from "@/components/wallpaper";
 import { SearchBox } from "@/components/search-box";
@@ -9,6 +9,15 @@ import { Hitokoto } from "@/components/hitokoto";
 import { AppGrid } from "@/components/app-grid";
 import { SettingsPanel } from "@/components/settings-panel";
 import { DEFAULT_GROUPS, type Group } from "@/lib/data";
+import { loadGroups } from "@/lib/groups";
+import {
+  GLASS_OPACITY_KEY,
+  WALLPAPER_BRIGHTNESS_KEY,
+  applyGlassTokens,
+  readGlassOpacity,
+  readTheme,
+  resolveTheme,
+} from "@/lib/theme";
 import { MessageHost } from "@/components/ui/message";
 import { WeatherPanel } from "@/components/weather-panel";
 import { CalendarPanel } from "@/components/calendar-panel";
@@ -25,23 +34,16 @@ export default function Home() {
   const [weatherOpen, setWeatherOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const reduce = useReducedMotion();
+  const closeCalendar = useCallback(() => setCalendarOpen(false), []);
 
   useEffect(() => {
-    const loadGroups = () => {
-      try {
-        const raw = localStorage.getItem("startpage:groups");
-        if (raw) {
-          const parsed = JSON.parse(raw) as Group[];
-          if (Array.isArray(parsed) && parsed.length) setGroupsData(parsed);
-        }
-      } catch {}
-    };
-    loadGroups();
-    window.addEventListener("storage", loadGroups);
-    window.addEventListener("groups-change" as never, loadGroups);
+    const reloadGroups = () => setGroupsData(loadGroups());
+    reloadGroups();
+    window.addEventListener("storage", reloadGroups);
+    window.addEventListener("groups-change" as never, reloadGroups);
     return () => {
-      window.removeEventListener("storage", loadGroups);
-      window.removeEventListener("groups-change" as never, loadGroups);
+      window.removeEventListener("storage", reloadGroups);
+      window.removeEventListener("groups-change" as never, reloadGroups);
     };
   }, []);
 
@@ -70,33 +72,23 @@ export default function Home() {
 
   // 外观持久化：主题/毛玻璃/壁纸亮度在刷新后即时生效（毛玻璃随主题自动切换基色，跟随系统时解析为实际明暗）
   useEffect(() => {
-    const theme = localStorage.getItem("startpage:theme");
-    const mql = window.matchMedia("(prefers-color-scheme: dark)");
-    const resolved = !theme || theme === "system" ? (mql.matches ? "dark" : "light") : theme;
-    document.documentElement.setAttribute("data-theme", resolved);
-    const isDark = resolved === "dark";
-    const glassRaw = localStorage.getItem("startpage:glassOpacity");
-    let glassVal: number;
-    if (glassRaw === null) glassVal = 40;
-    else {
+    const isDark = resolveTheme(readTheme()) === "dark";
+    document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
+
+    const glassVal = readGlassOpacity();
+    applyGlassTokens(isDark, glassVal);
+    const glassRaw = localStorage.getItem(GLASS_OPACITY_KEY);
+    if (glassRaw !== null) {
       const v = Number(glassRaw);
-      glassVal = !Number.isFinite(v) ? 40 : Math.min(80, Math.max(0, v));
-      if (!Number.isFinite(v) || v > 80 || v < 0) localStorage.setItem("startpage:glassOpacity", String(glassVal));
+      if (!Number.isFinite(v) || v > 80 || v < 0) localStorage.setItem(GLASS_OPACITY_KEY, String(glassVal));
     }
-    {
-      const v = glassVal;
-      const base = isDark ? "30,30,30" : "255,255,255";
-      const baseFocus = isDark ? "40,40,40" : "255,255,255";
-      document.documentElement.style.setProperty("--glass-bg", `rgba(${base},${v / 100})`);
-      document.documentElement.style.setProperty("--glass-bg-focus", `rgba(${baseFocus},${Math.min(0.72, v / 100 + 0.16).toFixed(2)})`);
-      document.documentElement.style.setProperty("--glass-border", isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.5)");
-    }
-    const bright = localStorage.getItem("startpage:wallpaperBrightness");
+
+    const bright = localStorage.getItem(WALLPAPER_BRIGHTNESS_KEY);
     if (bright) {
       const v = Number(bright);
       const norm = !Number.isFinite(v) || v === 0 ? 90 : Math.min(120, Math.max(70, v));
       document.documentElement.style.setProperty("--wallpaper-brightness", String(norm / 100));
-      if (v === 0 || v !== norm) localStorage.setItem("startpage:wallpaperBrightness", String(norm));
+      if (v === 0 || v !== norm) localStorage.setItem(WALLPAPER_BRIGHTNESS_KEY, String(norm));
     } else {
       document.documentElement.style.setProperty("--wallpaper-brightness", "0.9");
     }
@@ -328,7 +320,7 @@ export default function Home() {
       </div>
 
       <WeatherPanel open={weatherOpen} onClose={() => setWeatherOpen(false)} />
-      <CalendarPanel open={calendarOpen} onClose={() => setCalendarOpen(false)} />
+      <CalendarPanel open={calendarOpen} onClose={closeCalendar} />
 
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} initialTab={settingsTab} onTabChange={setSettingsTab} />
       <MessageHost />

@@ -11,11 +11,14 @@ import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { message } from "@/components/ui/message";
 import { Favicon } from "@/components/ui/favicon";
 import {
+  GROUPS_KEY,
+  ITEMS_KEY,
   addShortcut,
-  removeShortcut,
-  updateShortcut,
   getTargetGroupIdxForAdd,
+  loadGroups,
+  removeShortcut,
   saveGroups,
+  updateShortcut,
 } from "@/lib/groups";
 
 type GridItem = Shortcut & {
@@ -36,12 +39,10 @@ type Props = {
   onGroupChange: React.Dispatch<React.SetStateAction<number>>;
 };
 
-const STORAGE_ITEMS = "startpage:items";
-
 function loadItems(): GridItem[] {
   if (typeof window === "undefined") return buildItems();
   try {
-    const raw = localStorage.getItem(STORAGE_ITEMS) || localStorage.getItem("startpage:groups");
+    const raw = localStorage.getItem(ITEMS_KEY) || localStorage.getItem(GROUPS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as unknown;
       if (Array.isArray(parsed) && parsed.length) {
@@ -62,7 +63,7 @@ function loadItems(): GridItem[] {
 
 function mergeItemsWithGroups(prev: GridItem[], groupFlat: GridItem[]): GridItem[] {
   const groupMap = new Map(groupFlat.map((s) => [s.id, s]));
-  const groupIds = new Set(groupFlat.map((s) => s.id));
+  const groupIds = new Set(groupMap.keys());
   let next = prev.filter((p) => groupIds.has(p.id));
   next = next.map((p) => {
     const g = groupMap.get(p.id);
@@ -85,17 +86,7 @@ function mergeItemsWithGroups(prev: GridItem[], groupFlat: GridItem[]): GridItem
 
 export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
   const [items, setItems] = useState<GridItem[]>(() => loadItems());
-  const [groupsData, setGroupsData] = useState<Group[]>(() => {
-    if (typeof window === "undefined") return DEFAULT_GROUPS;
-    try {
-      const raw = localStorage.getItem("startpage:groups");
-      if (raw) {
-        const parsed = JSON.parse(raw) as Group[];
-        if (Array.isArray(parsed) && parsed.length && parsed[0]?.shortcuts) return parsed;
-      }
-    } catch {}
-    return DEFAULT_GROUPS;
-  });
+  const [groupsData, setGroupsData] = useState<Group[]>(() => loadGroups());
   const reduce = useReducedMotion();
   const gridRef = useRef<HTMLDivElement>(null);
   const gridScrollRef = useRef<HTMLDivElement>(null);
@@ -127,7 +118,7 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
       longPressTimer.current = window.setTimeout(() => {
         setMenu({ x: t.clientX, y: t.clientY, shortcut: item });
         longPressPos.current = null;
-      }, 560) as unknown as number;
+      }, 560);
     },
     [],
   );
@@ -157,30 +148,23 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
   }, []);
 
   useEffect(() => {
-    const loadGroups = () => {
-      try {
-        const raw = localStorage.getItem("startpage:groups");
-        if (raw) {
-          const parsed = JSON.parse(raw) as Group[];
-          if (Array.isArray(parsed) && parsed.length) {
-            setGroupsData(parsed);
-            setItems((prev) => mergeItemsWithGroups(prev, parsed.flatMap((g) => g.shortcuts) as GridItem[]));
-          }
-        }
-      } catch {}
+    const reloadGroups = () => {
+      const parsed = loadGroups();
+      setGroupsData(parsed);
+      setItems((prev) => mergeItemsWithGroups(prev, parsed.flatMap((g) => g.shortcuts) as GridItem[]));
     };
-    loadGroups();
-    window.addEventListener("storage", loadGroups);
-    window.addEventListener("groups-change" as never, loadGroups);
+    reloadGroups();
+    window.addEventListener("storage", reloadGroups);
+    window.addEventListener("groups-change" as never, reloadGroups);
     return () => {
-      window.removeEventListener("storage", loadGroups);
-      window.removeEventListener("groups-change" as never, loadGroups);
+      window.removeEventListener("storage", reloadGroups);
+      window.removeEventListener("groups-change" as never, reloadGroups);
     };
   }, []);
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_ITEMS, JSON.stringify(items));
+      localStorage.setItem(ITEMS_KEY, JSON.stringify(items));
     } catch {}
   }, [items]);
 

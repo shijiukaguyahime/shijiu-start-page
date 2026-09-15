@@ -53,8 +53,3 @@ export function Favicon({ url, domain: domainProp, name, color, size = 22, class
     </span>
   );
 }
-
-// 兼容旧调用：直接传 url/name/color 的简易版本
-export function FaviconImage({ url, name, color }: { url?: string; name: string; color?: string }) {
-  return <Favicon url={url} name={name} color={color} size={22} className="size-[22px] object-contain" />;
-}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { WALLPAPER_BLUR_KEY, WALLPAPER_BRIGHTNESS_KEY } from "@/lib/theme";
 
 const DEFAULT_WALLPAPER = "/default_bg.avif";
 export const WALLPAPER_KEY = "startpage:wallpaper";
@@ -125,12 +126,12 @@ export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
 
   useEffect(() => {
     const applyBrightness = () => {
-      const v = Number(localStorage.getItem("startpage:wallpaperBrightness"));
+      const v = Number(localStorage.getItem(WALLPAPER_BRIGHTNESS_KEY));
       if (Number.isFinite(v) && v !== 0) setBrightness(Math.min(120, Math.max(70, v)));
       else setBrightness(90);
     };
     const applyBlur = () => {
-      const raw = localStorage.getItem("startpage:wallpaperBlur");
+      const raw = localStorage.getItem(WALLPAPER_BLUR_KEY);
       if (raw === null) {
         setBlur(100);
         return;
@@ -140,7 +141,7 @@ export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
       if (!Number.isFinite(v) || v === 0) {
         setBlur(100);
         // 同步回写，避免下次仍为 0
-        localStorage.setItem("startpage:wallpaperBlur", "100");
+        localStorage.setItem(WALLPAPER_BLUR_KEY, "100");
         return;
       }
       setBlur(Math.min(100, Math.max(0, v)));
