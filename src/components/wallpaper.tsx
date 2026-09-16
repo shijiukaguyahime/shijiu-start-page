@@ -105,6 +105,31 @@ export function isWallpaperRequestUrl(url: string): boolean {
   return url === BING_WALLPAPER || url === NATURE_WALLPAPER || url.startsWith("https://wp.upx8.com/api.php?category=nature") || url.includes("bing.biturl.top") && url.includes("format=image");
 }
 
+/**
+ * 列表缩略图地址：Bing th 与阿里 OSS（随机风景 CDN）均支持按宽裁剪返回小图。
+ * 设置页若直接解码 UHD 原图（单张 3-4MB，历史 + 列表可达数十张），滚动会持续卡顿
+ */
+export function wallpaperThumbUrl(url: string, width = 480): string {
+  if (!url) return url;
+  try {
+    const u = new URL(url);
+    if (/(^|\.)bing\.com$/i.test(u.hostname)) {
+      u.searchParams.set("w", String(width));
+      u.searchParams.set("h", String(Math.round((width * 9) / 16)));
+      u.searchParams.set("rs", "1");
+      u.searchParams.set("c", "4");
+      u.searchParams.set("qlt", "80");
+      u.searchParams.set("pid", "hp");
+      return u.toString();
+    }
+    if (u.hostname.endsWith("shanhutech.cn")) {
+      u.searchParams.set("x-oss-process", `image/resize,w_${width}`);
+      return u.toString();
+    }
+  } catch {}
+  return url;
+}
+
 export function setWallpaper(v: WallpaperValue) {
   localStorage.setItem(WALLPAPER_KEY, JSON.stringify(v));
   // 仅保存具体图片 url（非请求接口），请求 url 会在 pick 时已解析为具体 url

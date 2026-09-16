@@ -28,7 +28,10 @@ export function Modal({ open, onClose, title, children, footer, width = 440 }: P
     const id = requestAnimationFrame(() => {
       const el = panelRef.current;
       if (!el) return;
-      const focusable = el.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      // data-autofocus 优先于 DOM 顺序（否则始终聚焦到头部关闭按钮，表单类弹窗体验差）
+      const focusable =
+        el.querySelector<HTMLElement>("[data-autofocus]") ??
+        el.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
       (focusable ?? el).focus();
     });
     return () => cancelAnimationFrame(id);

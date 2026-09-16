@@ -26,6 +26,25 @@ export function resolveEngine(engines: SearchEngine[], id: string): SearchEngine
   return engines.find((e) => e.id === id) ?? engines[0] ?? SEARCH_ENGINES[0];
 }
 
+/** 引擎列表持久化：设置页与搜索框下拉共用同一份存储与事件 */
+export function saveEngines(engines: SearchEngine[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(ENGINES_KEY, JSON.stringify(engines));
+  window.dispatchEvent(new Event("engine-change"));
+}
+
+/** 由弹窗表单数据构造自定义引擎，id/图标规则与设置页新增一致 */
+export function createCustomEngine(input: { label: string; url: string; icon?: string }): SearchEngine {
+  const label = input.label.trim();
+  return {
+    id: `custom_${Date.now()}`,
+    label,
+    url: input.url.trim(),
+    icon: (input.icon?.trim() || label.slice(0, 1)).slice(0, 2),
+    color: "#18181b",
+  };
+}
+
 export function loadHistory(): string[] {
   if (typeof window === "undefined") return [];
   try {

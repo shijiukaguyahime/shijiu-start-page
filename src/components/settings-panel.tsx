@@ -28,6 +28,7 @@ import {
   clearWallpaperHistory,
   fetchBingConcreteUrl,
   fetchNatureConcreteUrl,
+  wallpaperThumbUrl,
 } from "@/components/wallpaper";
 import type { WallpaperValue } from "@/components/wallpaper";
 import Sortable from "sortablejs";
@@ -52,14 +53,15 @@ import {
 } from "@/lib/theme";
 import {
   ENGINE_KEY,
-  ENGINES_KEY,
   SHOW_HISTORY_KEY,
   clearHistory as clearStoredHistory,
+  createCustomEngine,
   loadEngineId,
   loadEngines,
   loadHistory,
   loadShowHistory,
   removeHistory,
+  saveEngines,
 } from "@/lib/search";
 
 type TabId = "appearance" | "wallpaper" | "search" | "grid" | "data" | "about";
@@ -441,7 +443,7 @@ function WallpaperPane() {
       {/* 当前壁纸大预览，类青柠壁纸切换 */}
       <div className="overflow-hidden rounded-2xl border border-white/40 bg-zinc-900 shadow-sm">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={curr.url} alt="当前壁纸预览" className="h-40 w-full object-cover sm:h-48" loading="eager" />
+        <img src={wallpaperThumbUrl(curr.url, 1280)} alt="当前壁纸预览" className="h-40 w-full object-cover sm:h-48" loading="eager" decoding="async" />
         <div className="flex items-center justify-between bg-white px-3 py-2 text-xs dark:bg-zinc-800">
           <span className="font-medium text-zinc-700 dark:text-zinc-300">当前预览</span>
           <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-[11px] font-medium text-white dark:bg-white dark:text-zinc-900">{curr.type}</span>
@@ -495,7 +497,7 @@ function WallpaperPane() {
                   className={`group relative overflow-hidden rounded-xl border-2 transition-all ${active ? "border-zinc-900 dark:border-white" : "border-transparent hover:border-zinc-300 dark:hover:border-zinc-600"}`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={url} alt="Bing" className="aspect-[16/10] w-full object-cover" loading="lazy" decoding="async" />
+                  <img src={wallpaperThumbUrl(url)} alt="Bing" className="aspect-[16/10] w-full object-cover" loading="lazy" decoding="async" />
                   {active && (
                     <span className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
                       <CheckIcon weight="bold" className="size-3" />
@@ -529,7 +531,7 @@ function WallpaperPane() {
                       className={`relative flex aspect-[16/10] w-full overflow-hidden rounded-xl border-2 bg-zinc-100 transition-all dark:bg-zinc-800 ${active ? "border-zinc-900 dark:border-white" : "border-transparent hover:border-zinc-300 dark:hover:border-zinc-600"}`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={url} alt="历史壁纸" className="h-full w-full object-cover" loading="lazy" decoding="async" />
+                      <img src={wallpaperThumbUrl(url)} alt="历史壁纸" className="h-full w-full object-cover" loading="lazy" decoding="async" />
                       {active && (
                         <span className="absolute left-1 top-1 flex size-5 items-center justify-center rounded-full bg-zinc-900 text-white shadow dark:bg-white dark:text-zinc-900">
                           <CheckIcon weight="bold" className="size-3" />
@@ -615,8 +617,7 @@ function SearchPane() {
 
   const persistEngines = (next: SearchEngine[]) => {
     setEngines(next);
-    localStorage.setItem(ENGINES_KEY, JSON.stringify(next));
-    window.dispatchEvent(new Event("engine-change"));
+    saveEngines(next);
   };
 
   const pickEngine = (id: string) => {
@@ -634,9 +635,7 @@ function SearchPane() {
       message.warning("URL 需包含 {q} 占位");
       return;
     }
-    const id = `custom_${Date.now()}`;
-    const e: SearchEngine = { id, label: newEngine.label.trim(), url: newEngine.url.trim(), icon: (newEngine.icon.trim() || newEngine.label.trim().slice(0, 1)).slice(0, 2), color: "#18181b" };
-    persistEngines([...engines, e]);
+    persistEngines([...engines, createCustomEngine(newEngine)]);
     setNewEngine({ label: "", url: "", icon: "" });
     message.success("已添加搜索引擎");
   };

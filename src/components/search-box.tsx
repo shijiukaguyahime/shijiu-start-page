@@ -2,19 +2,22 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
-import { MagnifyingGlassIcon, XIcon, ClockIcon } from "@phosphor-icons/react";
+import { MagnifyingGlassIcon, XIcon, ClockIcon, PlusIcon } from "@phosphor-icons/react";
 import { SEARCH_ENGINES, type SearchEngine } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { limeDropdownMotion, useClickOutside } from "@/lib/hooks";
+import { EngineFormModal } from "@/components/ui/engine-form-modal";
 import {
   ENGINE_KEY,
   clearHistory as clearStoredHistory,
+  createCustomEngine,
   loadEngineId,
   loadEngines,
   loadHistory,
   loadShowHistory,
   removeHistory as removeStoredHistory,
   resolveEngine,
+  saveEngines,
   saveHistory,
 } from "@/lib/search";
 
@@ -38,6 +41,7 @@ export function SearchBox({ onFocusChange }: Props) {
   const [focused, setFocused] = useState(false);
   const [history, setHistory] = useState<string[]>(() => loadHistory());
   const [showHistoryEnabled, setShowHistoryEnabled] = useState<boolean>(() => loadShowHistory());
+  const [showAddEngine, setShowAddEngine] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -95,6 +99,8 @@ export function SearchBox({ onFocusChange }: Props) {
       inputRef.current?.blur();
     },
     isActive,
+    // 弹窗经 portal 挂到 body，不在 wrapper 内；忽略其点击，避免打开表单时搜索框收起
+    { ignoreSelectors: ["[data-modal]"] },
   );
 
   function pickEngine(e: SearchEngine) {
@@ -102,6 +108,19 @@ export function SearchBox({ onFocusChange }: Props) {
     localStorage.setItem(ENGINE_KEY, e.id);
     setShowEngines(false);
     setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  function addCustomEngine(data: { label: string; url: string; icon: string }) {
+    const created = createCustomEngine(data);
+    // 先写选中 id 再广播 engine-change，使监听方一次拿到新列表与选中项
+    localStorage.setItem(ENGINE_KEY, created.id);
+    saveEngines([...loadEngines(), created]);
+    setShowAddEngine(false);
+  }
+
+  function closeAddEngine() {
+    setShowAddEngine(false);
+    requestAnimationFrame(() => inputRef.current?.focus());
   }
 
   function clearQuery() {
@@ -248,52 +267,70 @@ export function SearchBox({ onFocusChange }: Props) {
 
       <AnimatePresence>
         {showEngines && (
-          <motion.ul
-            role="listbox"
-            aria-label="选择搜索引擎"
+          <motion.div
             initial={reduce ? { opacity: 0 } : (limeDropdownMotion.initial as unknown as never)}
             animate={reduce ? { opacity: 1 } : (limeDropdownMotion.animate as unknown as never)}
             exit={reduce ? { opacity: 0 } : (limeDropdownMotion.exit as unknown as never)}
             transition={reduce ? ({ duration: 0.14 } as unknown as never) : (limeDropdownMotion.transition as unknown as never)}
             style={{ transformOrigin: "top left" }}
             onClick={(e) => e.stopPropagation()}
-            className="dropdown-panel gpu absolute left-0 top-[calc(100%+8px)] z-20 w-[168px] origin-top-left overflow-hidden rounded-2xl p-1.5"
+            className="dropdown-panel gpu absolute left-0 top-[calc(100%+8px)] z-20 flex max-h-[min(60vh,340px)] w-[168px] origin-top-left flex-col overflow-hidden rounded-2xl"
           >
-            {engines.map((eng) => (
-              <li key={eng.id} role="option" aria-selected={eng.id === engine.id}>
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    pickEngine(eng);
-                  }}
-                  className={cn(
-                    "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium transition-colors",
-                    eng.id === engine.id
-                      ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
-                      : "text-zinc-700 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100",
-                  )}
-                >
-                  <span
+            <ul role="listbox" aria-label="选择搜索引擎" className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1.5">
+              {engines.map((eng) => (
+                <li key={eng.id} role="option" aria-selected={eng.id === engine.id}>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      pickEngine(eng);
+                    }}
                     className={cn(
-                      "flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold shadow-sm ring-1",
-                      eng.id === engine.id ? "bg-white text-zinc-900 ring-white/20" : "bg-white/70 text-zinc-600 ring-black/5",
+                      "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium transition-colors",
+                      eng.id === engine.id
+                        ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+                        : "text-zinc-700 hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100",
                     )}
-                    aria-hidden
                   >
-                    {eng.icon.slice(0, 1)}
-                  </span>
-                  {eng.label}
-                </button>
-              </li>
-            ))}
-          </motion.ul>
+                    <span
+                      className={cn(
+                        "flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold shadow-sm ring-1",
+                        eng.id === engine.id ? "bg-white text-zinc-900 ring-white/20" : "bg-white/70 text-zinc-600 ring-black/5",
+                      )}
+                      aria-hidden
+                    >
+                      {eng.icon.slice(0, 1)}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{eng.label}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="shrink-0 border-t border-zinc-200 p-1.5 dark:border-white/10">
+              <button
+                type="button"
+                aria-haspopup="dialog"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowEngines(false);
+                  setShowAddEngine(true);
+                }}
+                className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-500 transition-colors hover:bg-zinc-900/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100"
+              >
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/70 text-zinc-500 shadow-sm ring-1 ring-black/5 dark:bg-zinc-700 dark:text-zinc-300 dark:ring-white/10" aria-hidden>
+                  <PlusIcon weight="bold" className="size-3.5" />
+                </span>
+                添加自定义
+              </button>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
       <AnimatePresence>
-        {!showEngines && isActive && !hasQuery && showHistoryEnabled && history.length > 0 && (
+        {!showEngines && !showAddEngine && isActive && !hasQuery && showHistoryEnabled && history.length > 0 && (
           <motion.div
             role="listbox"
             aria-label="搜索历史"
@@ -346,6 +383,8 @@ export function SearchBox({ onFocusChange }: Props) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <EngineFormModal open={showAddEngine} onClose={closeAddEngine} onSubmit={addCustomEngine} />
     </div>
   );
 }
