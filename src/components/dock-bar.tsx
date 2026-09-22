@@ -46,6 +46,7 @@ export function DockBar({
 }) {
   const reduce = useReducedMotion();
   const [tip, setTip] = useState<{ label: string; x: number; y: number } | null>(null);
+
   const showTip = (e: React.MouseEvent<HTMLElement>, label: string) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setTip({ label, x: rect.left + rect.width / 2, y: rect.top });

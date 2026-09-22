@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { Wallpaper } from "@/components/wallpaper";
-import { SearchBox } from "@/components/search-box";
+import { SearchBox, type SearchBoxHandle } from "@/components/search-box";
 import { DockBar } from "@/components/dock-bar";
 import { Hitokoto } from "@/components/hitokoto";
 import { AppGrid } from "@/components/app-grid";
@@ -19,6 +19,7 @@ import {
   resolveTheme,
 } from "@/lib/theme";
 import { MessageHost } from "@/components/ui/message";
+import { ESC_PRIORITY, useEscapeLayer } from "@/lib/keyboard";
 import { WeatherPanel } from "@/components/weather-panel";
 import { CalendarPanel } from "@/components/calendar-panel";
 
@@ -35,6 +36,48 @@ export default function Home() {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const reduce = useReducedMotion();
   const closeCalendar = useCallback(() => setCalendarOpen(false), []);
+  const searchRef = useRef<SearchBoxHandle>(null);
+
+  /** 把焦点从 Dock / 圆点 / 宫格 / 搜索收回到页面本身 */
+  const blurHomeFocus = useCallback(() => {
+    const active = document.activeElement as HTMLElement | null;
+    if (!active || active === document.body || active === document.documentElement) return;
+    if (active.closest("[data-dock], [data-pagination], [data-grid], [data-search]")) active.blur();
+  }, []);
+
+  // 首页兜底 Esc：没有任何浮层打开时，让 Tab 停在 Dock/圆点/宫格上的焦点退回主页面，
+  // 保证「按一次 Esc 就回到干净的首页」，而不是仍然高亮着某个 Dock 按钮
+  useEscapeLayer("home", true, blurHomeFocus, ESC_PRIORITY.home);
+
+  // 收起宫格时一并卸掉焦点，避免 Esc 关掉宫格后焦点还留在 Dock 上
+  const closeGrid = useCallback(() => {
+    setShowGrid(false);
+    blurHomeFocus();
+  }, [blurHomeFocus]);
+
+  // 首页热键：无任何焦点时 Enter 聚焦搜索框，直接敲字符则聚焦并输入
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+      if (showGrid || settingsOpen || weatherOpen || calendarOpen) return;
+      const active = document.activeElement as HTMLElement | null;
+      // 已有焦点元素（输入框、Dock 按钮等）时不劫持，避免抢掉 Enter 的按钮激活
+      if (active && active !== document.body && active !== document.documentElement) return;
+
+      if (e.key === "Enter") {
+        e.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+      // 仅 ASCII 可打印字符进入搜索，中文输入法组合过程不劫持
+      if (e.key.length === 1 && /^[\x21-\x7e]$/.test(e.key)) {
+        e.preventDefault();
+        searchRef.current?.focus(e.key);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [showGrid, settingsOpen, weatherOpen, calendarOpen]);
 
   useEffect(() => {
     const reloadGroups = () => setGroupsData(loadGroups());
@@ -156,7 +199,7 @@ export default function Home() {
         if (!showGrid) return;
         if (target.closest("[data-grid]") || target.closest("[data-dock]") || target.closest("[data-pagination]")) return;
         // 点击壁纸空白处回退
-        setShowGrid(false);
+        closeGrid();
       }}
     >
       <Wallpaper blurred={blurred} />
@@ -206,7 +249,7 @@ export default function Home() {
                 className="absolute inset-x-0 top-0 mx-auto w-full max-w-[520px] gpu"
                 data-search
               >
-                <SearchBox onFocusChange={setSearchFocused} />
+                <SearchBox ref={searchRef} onFocusChange={setSearchFocused} />
               </motion.div>
             ) : (
               <motion.div
@@ -226,7 +269,7 @@ export default function Home() {
                 className="absolute inset-x-0 top-0 mx-auto flex w-full max-w-[880px] flex-col items-center gpu"
                 data-grid
               >
-                <AppGrid open={showGrid} onClose={() => setShowGrid(false)} groupIdx={gridGroupIdx} onGroupChange={setGridGroupIdx} />
+                <AppGrid open={showGrid} onClose={closeGrid} groupIdx={gridGroupIdx} onGroupChange={setGridGroupIdx} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -289,7 +332,8 @@ export default function Home() {
             setWeatherOpen(false);
             setCalendarOpen(false);
             setSettingsOpen(false);
-            setShowGrid((v) => !v);
+            if (showGrid) closeGrid();
+            else setShowGrid(true);
           }}
           isWeatherOpen={weatherOpen}
           isCalendarOpen={calendarOpen}

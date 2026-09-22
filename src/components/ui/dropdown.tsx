@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { limeDropdownMotion, useClickOutside } from "@/lib/hooks";
+import { ESC_PRIORITY, setKbdMode, useEscapeLayer } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
 
 export type DropdownItem = {
@@ -29,6 +30,7 @@ type Props = {
 /** portal 到 body，避免被父级 transform 截获 fixed */
 export function DropdownMenu({ open, onClose, items, anchor, className, selectedKey, id, ariaLabel, triggerRef }: Props) {
   const reduce = useReducedMotion();
+  const uid = useId();
   const ref = useRef<HTMLDivElement>(null);
   const firstItemKey = items[0]?.key;
   const [activeKey, setActiveKey] = useState<string | undefined>(selectedKey ?? firstItemKey);
@@ -43,6 +45,7 @@ export function DropdownMenu({ open, onClose, items, anchor, className, selected
   };
 
   useClickOutside(ref as React.RefObject<HTMLElement | null>, closeMenu, open);
+  useEscapeLayer(`dropdown-${uid}`, open, closeMenu, ESC_PRIORITY.menu);
 
   useEffect(() => {
     if (!open) return;
@@ -127,18 +130,21 @@ export function DropdownMenu({ open, onClose, items, anchor, className, selected
               const target = e.currentTarget as HTMLElement;
               const items = Array.from(target.querySelectorAll<HTMLElement>('[role="menuitem"]'));
               const idx = items.indexOf(document.activeElement as HTMLElement);
-              if (e.key === "ArrowDown") {
+              // 统一规则：←/→ 与 ↑/↓ 等价（右键菜单是一维列表，没有子菜单）
+              const key = e.key === "ArrowRight" ? "ArrowDown" : e.key === "ArrowLeft" ? "ArrowUp" : e.key;
+              if (key === "ArrowDown" || key === "ArrowUp" || key === "Home" || key === "End") setKbdMode("arrow");
+              if (key === "ArrowDown") {
                 e.preventDefault();
                 const next = items[(idx + 1) % items.length] ?? items[0];
                 next?.focus();
-              } else if (e.key === "ArrowUp") {
+              } else if (key === "ArrowUp") {
                 e.preventDefault();
                 const prev = items[(idx - 1 + items.length) % items.length] ?? items[items.length - 1];
                 prev?.focus();
-              } else if (e.key === "Home") {
+              } else if (key === "Home") {
                 e.preventDefault();
                 items[0]?.focus();
-              } else if (e.key === "End") {
+              } else if (key === "End") {
                 e.preventDefault();
                 items[items.length - 1]?.focus();
               } else if (e.key === "Escape" || e.key === "Tab") {

@@ -4,6 +4,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { XIcon, CaretLeftIcon, CaretRightIcon, CaretDownIcon } from "@phosphor-icons/react";
 import { limeDropdownMotion, useClickOutside, useFocusTrap } from "@/lib/hooks";
+import { ESC_PRIORITY, useEscapeLayer } from "@/lib/keyboard";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import {
   CALENDAR_MAX_YEAR,
@@ -206,6 +207,8 @@ export const CalendarPanel = memo(function CalendarPanel({ open, onClose }: { op
     ignoreSelectors: ["[data-dock]", "[role='menu']"],
   });
 
+  // Esc 分层：先收起年份/月份下拉，再关闭整个日历
+  useEscapeLayer("calendar", open, closeFromOutside, ESC_PRIORITY.panel);
   useFocusTrap(panelRef as React.RefObject<HTMLElement | null>, open);
 
   const selectedDate = parseDate(selected);

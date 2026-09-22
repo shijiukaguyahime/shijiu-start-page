@@ -452,3 +452,15 @@ a:hover {
 [data-theme="dark"] *:focus-visible {
   outline-color: #fafafa;
 }
+
+/* ========================================================
+   键盘导航高亮环
+   全站只有一套焦点环：颜色与粗细都和 Tab 的 :focus-visible 完全一致。
+   data-kbd="arrow" 只在按下方向键时出现在 html 上（Tab 或鼠标操作会清空），
+   它唯一的作用是让宫格用脚本 focus() 移动的焦点也显示这个环
+   —— :focus-visible 对程序化聚焦不一定匹配，而宫格的 .focus() 正是脚本触发。
+   ======================================================== */
+html[data-kbd="arrow"] *:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

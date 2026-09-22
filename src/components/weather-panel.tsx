@@ -20,7 +20,9 @@ import {
   SnowflakeIcon,
   CloudFogIcon,
 } from "@phosphor-icons/react";
-import { useClickOutside, useEscapeKey, useFocusTrap, limeDropdownMotion } from "@/lib/hooks";
+import { useClickOutside, useFocusTrap, limeDropdownMotion } from "@/lib/hooks";
+// Esc 改走层栈：原来各自监听 document，层栈会先截获，否则会失效
+import { ESC_PRIORITY, useEscapeLayer } from "@/lib/keyboard";
 
 type WeatherCurrent = { temp: number; feelsLike: number; humidity: number; wind: number; text: string; icon: string; code: number; time: string };
 type WeatherDaily = { date: string; max: number; min: number; text: string; icon: string; code: number; precip?: number | null };
@@ -168,7 +170,7 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
   };
 
   useClickOutside(panelRef as React.RefObject<HTMLElement | null>, () => onClose(), open, { ignoreSelectors: ["[data-dock]"] });
-  useEscapeKey(onClose, open);
+  useEscapeLayer("weather", open, onClose, ESC_PRIORITY.panel);
   useFocusTrap(panelRef as React.RefObject<HTMLElement | null>, open);
 
   const handleSearch = () => {

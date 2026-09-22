@@ -38,7 +38,8 @@ import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { IconFormModal } from "@/components/ui/icon-form-modal";
 import { message } from "@/components/ui/message";
 import { GROUPS_KEY, ITEMS_KEY, addShortcut, loadGroups, removeShortcut, updateShortcut } from "@/lib/groups";
-import { useBodyScrollLock, useEscapeKey } from "@/lib/hooks";
+import { useBodyScrollLock, useFocusTrap } from "@/lib/hooks";
+import { ESC_PRIORITY, useEscapeLayer, usePaneNavigation } from "@/lib/keyboard";
 import {
   GLASS_OPACITY_KEY,
   THEME_KEY,
@@ -66,6 +67,10 @@ import {
 
 type TabId = "appearance" | "wallpaper" | "search" | "grid" | "data" | "about";
 
+/** 内容区参与方向键导航的元素：表单控件、按钮与图标卡（隐藏的 file input 会被可见性过滤掉） */
+const CONTENT_NAV_SELECTOR =
+  "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [role='switch'], [data-icon]";
+
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: "appearance", label: "外观", icon: PaletteIcon },
   { id: "wallpaper", label: "壁纸", icon: ImageIcon },
@@ -91,10 +96,45 @@ export function SettingsPanel({ open, onClose, initialTab = "appearance", onTabC
   };
   const reduce = useReducedMotion();
 
-  useEscapeKey(onClose, open);
-  useBodyScrollLock(open);
-
+  const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const asideRef = useRef<HTMLElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEscapeLayer("settings", open, onClose, ESC_PRIORITY.settings);
+  useBodyScrollLock(open);
+  // 焦点陷阱：Tab 不再跑到面板背后的页面上
+  useFocusTrap(dialogRef as React.RefObject<HTMLElement | null>, open);
+
+  // Esc 兜底：层栈已处理时会 preventDefault 从而跳过这里；没接管时，
+  // 只要面板是最上层对话框就仍然能关掉
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const panel = dialogRef.current;
+      if (!panel) return;
+      const nodes = document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]');
+      if (nodes[nodes.length - 1] !== panel) return;
+      e.preventDefault();
+      onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  // 统一规则：四个方向键沿同一序列移动（↓/→ 下一个，↑/← 上一个），
+  // 侧栏末项继续往下就进内容区。面板刚打开时焦点在关闭按钮（不在两侧），
+  // 方向键直接进入侧栏，免去先按 Tab。
+  usePaneNavigation({
+    enabled: open,
+    side: { ref: asideRef },
+    main: { ref: contentRef, selector: CONTENT_NAV_SELECTOR },
+    autoEnter: true,
+    root: dialogRef,
+    activateSide: true,
+  });
+
   useEffect(() => {
     if (open) closeRef.current?.focus();
   }, [open]);
@@ -113,6 +153,7 @@ export function SettingsPanel({ open, onClose, initialTab = "appearance", onTabC
             aria-hidden
           />
           <motion.div
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-label="设置"
@@ -150,7 +191,7 @@ export function SettingsPanel({ open, onClose, initialTab = "appearance", onTabC
               <XIcon weight="bold" className="size-4" />
             </button>
 
-            <aside className="flex w-full shrink-0 flex-col border-zinc-900/5 bg-white/80 dark:border-white/10 dark:bg-zinc-900/40 md:w-[220px] md:border-r max-md:border-b-0 max-md:py-0">
+            <aside ref={asideRef} className="flex w-full shrink-0 flex-col border-zinc-900/5 bg-white/80 dark:border-white/10 dark:bg-zinc-900/40 md:w-[220px] md:border-r max-md:border-b-0 max-md:py-0">
               <div className="hidden items-center gap-2 px-4 pb-3 pt-4 md:flex">
                 <div className="flex size-8 items-center justify-center rounded-xl bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
                   <GearIcon weight="bold" className="size-4" />
@@ -165,6 +206,7 @@ export function SettingsPanel({ open, onClose, initialTab = "appearance", onTabC
                     <button
                       key={t.id}
                       type="button"
+                      data-nav-item
                       onClick={() => setActive(t.id)}
                       aria-current={activeNow ? "true" : undefined}
                       className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors max-md:px-3.5 max-md:py-2 ${
@@ -194,7 +236,7 @@ export function SettingsPanel({ open, onClose, initialTab = "appearance", onTabC
                   {active === "about" && "关于本项目"}
                 </p>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6 pt-0 md:px-7 md:pb-7 md:pt-0" style={{ contain: "paint" }}>
+              <div ref={contentRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6 pt-0 md:px-7 md:pb-7 md:pt-0" style={{ contain: "paint" }}>
                 <AnimatePresence mode="wait" initial={false}>
                   <motion.div
                     key={active}
@@ -545,7 +587,7 @@ function WallpaperPane() {
                         e.stopPropagation();
                         removeWallpaperHistory(url);
                       }}
-                      className="absolute -right-1 -top-1 flex size-6 items-center justify-center rounded-full bg-white text-zinc-500 shadow-md ring-1 ring-black/5 transition-all hover:bg-red-50 hover:text-red-600 group-hover/history:opacity-100 dark:bg-zinc-700 dark:text-zinc-300 dark:ring-white/10 dark:hover:bg-red-500/20 dark:hover:text-red-400 max-sm:opacity-100 sm:opacity-0"
+                      className="absolute -right-1 -top-1 flex size-6 items-center justify-center rounded-full bg-white text-zinc-500 shadow-md ring-1 ring-black/5 transition-all hover:bg-red-50 hover:text-red-600 group-hover/history:opacity-100 dark:bg-zinc-700 dark:text-zinc-300 dark:ring-white/10 dark:hover:bg-red-500/20 dark:hover:text-red-400 max-sm:opacity-100 sm:opacity-0 sm:focus:opacity-100"
                     >
                       <XIcon weight="bold" className="size-3.5" />
                     </button>
@@ -702,6 +744,13 @@ function SearchPane() {
                 name="engine"
                 checked={engineId === e.id}
                 onChange={() => pickEngine(e.id)}
+                // 方向键已交给面板导航（否则四个方向都会被 radio 组吃掉），选中改由空格/回车完成
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    pickEngine(e.id);
+                  }
+                }}
                 onClick={(ev) => ev.stopPropagation()}
                 className="size-4 shrink-0 cursor-pointer accent-zinc-900 dark:accent-white"
                 style={{ accentColor: "var(--accent)" }}
@@ -790,7 +839,7 @@ function SearchPane() {
             {history.map((q) => (
               <li key={q} className="group flex items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-1.5 text-sm text-zinc-700 shadow-sm dark:bg-zinc-900 dark:text-zinc-300">
                 <span className="min-w-0 truncate">{q}</span>
-                <button type="button" onClick={() => removeOne(q)} className="shrink-0 rounded-full p-1 text-zinc-400 opacity-0 transition-opacity hover:bg-zinc-900/5 hover:text-zinc-900 group-hover:opacity-100 dark:text-zinc-500 dark:hover:bg-white/10 dark:hover:text-zinc-100" aria-label={`删除 ${q}`}>
+                <button type="button" onClick={() => removeOne(q)} className="shrink-0 rounded-full p-1 text-zinc-400 opacity-0 transition-opacity focus:opacity-100 hover:bg-zinc-900/5 hover:text-zinc-900 group-hover:opacity-100 dark:text-zinc-500 dark:hover:bg-white/10 dark:hover:text-zinc-100" aria-label={`删除 ${q}`}>
                   <XIcon weight="bold" className="size-3.5" />
                 </button>
               </li>
@@ -967,7 +1016,7 @@ function IconsPane() {
                   <h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">
                     {g.title} <span className="font-normal text-zinc-400 dark:text-zinc-500">- {g.shortcuts.length}项</span>
                   </h3>
-                  <div className="flex items-center gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+                  <div className="flex items-center gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
                     <button type="button" onClick={() => startEdit(g)} className="flex size-7 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600" aria-label="编辑分组名">
                       <PencilSimpleIcon weight="bold" className="size-3.5" />
                     </button>
@@ -996,7 +1045,18 @@ function IconsPane() {
                   key={s.id}
                   data-icon
                   data-id={s.id}
+                  // 图标卡本身要能 Tab/方向键选到（原来只是 div，键盘完全碰不到），
+                  // 因此补 role/tabIndex 与回车空格激活；外层仍是 div 以保留内部的删除按钮嵌套
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`编辑 ${s.name}`}
                   onClick={() => setEditIcon({ groupId: g.id, shortcut: s })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setEditIcon({ groupId: g.id, shortcut: s });
+                    }
+                  }}
                   className="group/item relative flex cursor-grab flex-col items-center gap-1 rounded-xl border border-transparent p-2 hover:border-zinc-200 hover:bg-zinc-50 active:cursor-grabbing dark:hover:border-zinc-600 dark:hover:bg-zinc-700/50"
                 >
                   <span className="flex size-10 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-700 dark:ring-zinc-600">
@@ -1009,7 +1069,7 @@ function IconsPane() {
                       e.stopPropagation();
                       setDeleteIcon({ groupId: g.id, shortcut: s });
                     }}
-                    className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-white text-zinc-400 shadow ring-1 ring-black/5 opacity-100 transition-opacity hover:bg-zinc-900 hover:text-white dark:bg-zinc-700 dark:text-zinc-400 dark:ring-white/10 md:opacity-0 md:group-hover/item:opacity-100"
+                    className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-white text-zinc-400 shadow ring-1 ring-black/5 opacity-100 transition-opacity hover:bg-zinc-900 hover:text-white dark:bg-zinc-700 dark:text-zinc-400 dark:ring-white/10 md:opacity-0 md:group-hover/item:opacity-100 md:group-focus-within/item:opacity-100"
                     aria-label={`删除 ${s.name}`}
                   >
                     <XIcon weight="bold" className="size-3" />
@@ -1060,6 +1120,7 @@ const DATA_KEYS = ["startpage:wallpaper", "startpage:wallpaperHistory", "startpa
 
 function DataPane() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const exportJson = () => {
     const payload: Record<string, unknown> = { at: new Date().toISOString(), version: 1 };
     for (const k of DATA_KEYS) {
@@ -1138,10 +1199,16 @@ function DataPane() {
           <button type="button" onClick={exportJson} className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow hover:bg-zinc-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100">
             导出 JSON
           </button>
-          <label className="cursor-pointer rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700">
+          {/* 原来是 label 包 hidden file input：label 不可聚焦、input 被 display:none 屏蔽，
+              Tab 和方向键都够不到。改成真按钮 + 程序化触发隐藏 input 的点击 */}
+          <button
+            type="button"
+            onClick={() => importInputRef.current?.click()}
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+          >
             导入 JSON
-            <input type="file" accept="application/json" className="hidden" onChange={importJson} />
-          </label>
+          </button>
+          <input ref={importInputRef} type="file" accept="application/json" className="hidden" onChange={importJson} />
         </div>
       </Section>
       <Section title="重置">

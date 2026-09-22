@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { MagnifyingGlassIcon, XIcon, ClockIcon, PlusIcon } from "@phosphor-icons/react";
 import { SEARCH_ENGINES, type SearchEngine } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { limeDropdownMotion, useClickOutside } from "@/lib/hooks";
+import { ESC_PRIORITY, focusFirstNavItem, focusLastNavItem, useArrowNavigation, useEscapeLayer } from "@/lib/keyboard";
 import { EngineFormModal } from "@/components/ui/engine-form-modal";
 import {
   ENGINE_KEY,
@@ -33,7 +34,12 @@ type Props = {
   onFocusChange?: (focused: boolean) => void;
 };
 
-export function SearchBox({ onFocusChange }: Props) {
+export type SearchBoxHandle = {
+  /** 供首页全局热键调用；prefill 会写入输入框 */
+  focus: (prefill?: string) => void;
+};
+
+export const SearchBox = forwardRef<SearchBoxHandle, Props>(function SearchBox({ onFocusChange }, ref) {
   const [query, setQuery] = useState("");
   const [showEngines, setShowEngines] = useState(false);
   const [engines, setEngines] = useState<SearchEngine[]>(SEARCH_ENGINES);
@@ -45,7 +51,16 @@ export function SearchBox({ onFocusChange }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const enginePanelRef = useRef<HTMLDivElement>(null);
+  const historyPanelRef = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion();
+
+  useImperativeHandle(ref, () => ({
+    focus(prefill?: string) {
+      if (prefill !== undefined) setQuery(prefill);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    },
+  }));
 
   const applyEngineConfig = () => {
     const list = loadEngines();
@@ -102,6 +117,41 @@ export function SearchBox({ onFocusChange }: Props) {
     // 弹窗经 portal 挂到 body，不在 wrapper 内；忽略其点击，避免打开表单时搜索框收起
     { ignoreSelectors: ["[data-modal]"] },
   );
+
+  const focusInput = () => requestAnimationFrame(() => inputRef.current?.focus());
+  const showHistory = !showEngines && !showAddEngine && isActive && !hasQuery && showHistoryEnabled && history.length > 0;
+
+  // Esc 分层：先收下拉，再失焦回首页（不再一次 Esc 全退）
+  // 下拉内上下键选引擎/历史项；走到顶端再往上或末端再往下，焦点还给输入框。
+  // autoEnter + enterFrom：焦点还停在左侧引擎按钮或输入框上时（点开下拉后焦点不一定在 input），
+  // 直接按上下键也能进入列表，否则会出现“下拉开着但方向键毫无反应”
+  useArrowNavigation(enginePanelRef, {
+    enabled: showEngines,
+    orientation: "vertical",
+    autoEnter: true,
+    enterFrom: "[data-search]",
+    onExit: (dir) => {
+      if (dir === "up" || dir === "down") focusInput();
+    },
+  });
+  useArrowNavigation(historyPanelRef, {
+    enabled: showHistory,
+    orientation: "vertical",
+    autoEnter: true,
+    enterFrom: "[data-search]",
+    onExit: (dir) => {
+      if (dir === "up" || dir === "down") focusInput();
+    },
+  });
+
+  useEscapeLayer("search-engines", showEngines, () => {
+    setShowEngines(false);
+    focusInput();
+  }, ESC_PRIORITY.menu);
+  useEscapeLayer("search", isActive && !showEngines && !showAddEngine, () => {
+    setFocused(false);
+    inputRef.current?.blur();
+  }, ESC_PRIORITY.search);
 
   function pickEngine(e: SearchEngine) {
     setEngine(e);
@@ -219,10 +269,13 @@ export function SearchBox({ onFocusChange }: Props) {
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter") submit();
-            if (e.key === "Escape") {
-              setShowEngines(false);
-              (e.target as HTMLInputElement).blur();
-            }
+            // ↓ 进列表首项、↑ 进列表末项；下拉关着时左右键仍留给光标，此处不处理
+            if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+            const panel = showEngines ? enginePanelRef : showHistory ? historyPanelRef : null;
+            if (!panel) return;
+            e.preventDefault();
+            if (e.key === "ArrowDown") focusFirstNavItem(panel);
+            else focusLastNavItem(panel);
           }}
           placeholder="搜索"
           aria-label="搜索关键词或网址"
@@ -268,6 +321,7 @@ export function SearchBox({ onFocusChange }: Props) {
       <AnimatePresence>
         {showEngines && (
           <motion.div
+            ref={enginePanelRef}
             initial={reduce ? { opacity: 0 } : (limeDropdownMotion.initial as unknown as never)}
             animate={reduce ? { opacity: 1 } : (limeDropdownMotion.animate as unknown as never)}
             exit={reduce ? { opacity: 0 } : (limeDropdownMotion.exit as unknown as never)}
@@ -281,6 +335,7 @@ export function SearchBox({ onFocusChange }: Props) {
                 <li key={eng.id} role="option" aria-selected={eng.id === engine.id}>
                   <button
                     type="button"
+                    data-nav-item
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -310,6 +365,7 @@ export function SearchBox({ onFocusChange }: Props) {
             <div className="shrink-0 border-t border-zinc-200 p-1.5 dark:border-white/10">
               <button
                 type="button"
+                data-nav-item
                 aria-haspopup="dialog"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={(e) => {
@@ -330,8 +386,9 @@ export function SearchBox({ onFocusChange }: Props) {
       </AnimatePresence>
 
       <AnimatePresence>
-        {!showEngines && !showAddEngine && isActive && !hasQuery && showHistoryEnabled && history.length > 0 && (
+        {showHistory && (
           <motion.div
+            ref={historyPanelRef}
             role="listbox"
             aria-label="搜索历史"
             initial={reduce ? { opacity: 0 } : (limeDropdownMotion.initial as unknown as never)}
@@ -346,6 +403,7 @@ export function SearchBox({ onFocusChange }: Props) {
               <span className="text-xs font-medium text-zinc-500">搜索历史</span>
               <button
                 type="button"
+                data-nav-item
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={clearAllHistory}
                 className="rounded-full px-2 py-0.5 text-xs font-medium text-zinc-500 hover:bg-zinc-900/5 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-200"
@@ -358,6 +416,7 @@ export function SearchBox({ onFocusChange }: Props) {
                 <li key={q} role="option">
                   <button
                     type="button"
+                    data-nav-item
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => pickHistory(q)}
                     className="group flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-900/5 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100"
@@ -387,4 +446,4 @@ export function SearchBox({ onFocusChange }: Props) {
       <EngineFormModal open={showAddEngine} onClose={closeAddEngine} onSubmit={addCustomEngine} />
     </div>
   );
-}
+});

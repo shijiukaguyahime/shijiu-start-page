@@ -10,6 +10,7 @@ import { IconFormModal } from "@/components/ui/icon-form-modal";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { message } from "@/components/ui/message";
 import { Favicon } from "@/components/ui/favicon";
+import { ESC_PRIORITY, setKbdMode, useArrowNavigation, useEscapeLayer } from "@/lib/keyboard";
 import {
   GROUPS_KEY,
   ITEMS_KEY,
@@ -90,6 +91,9 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
   const reduce = useReducedMotion();
   const gridRef = useRef<HTMLDivElement>(null);
   const gridScrollRef = useRef<HTMLDivElement>(null);
+  // 导航范围锁定“当前分组”的元素：切换分组时旧网格在 exit 动画期间仍在 DOM 里，
+  // 用分组标记把它排除掉，避免焦点和索引算到即将卸载的旧节点上
+  const navSelector = `[data-grid-group="${groupIdx}"] [data-nav-item]`;
 
   // 宫格图标右键/长按菜单
   const [menu, setMenu] = useState<{ x: number; y: number; shortcut: GridItem } | null>(null);
@@ -319,6 +323,51 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
     };
   }, [menu]);
 
+  /**
+   * 切换分组后旧网格要播完 exit 动画才卸载，期间新旧节点同时存在；
+   * 若按“当前分组”查询，第一帧很可能命中即将被移除的旧节点，焦点随即掉回 body。
+   * 所以这里按**目标分组**查询，并重试到新节点真正出现为止。
+   */
+  const focusAfterGroupChange = useCallback((group: number, preferIdx: number) => {
+    let tries = 0;
+    const attempt = () => {
+      const scope = gridScrollRef.current;
+      if (!scope) return;
+      const found = Array.from(scope.querySelectorAll<HTMLElement>(`[data-grid-group="${group}"] [data-nav-item]`)).filter(
+        (n) => n.getClientRects().length > 0,
+      );
+      if (found.length === 0) {
+        if (++tries < 20) requestAnimationFrame(attempt);
+        return;
+      }
+      setKbdMode("arrow");
+      const target = found[Math.min(preferIdx, found.length - 1)];
+      target.focus({ preventScroll: true });
+      target.scrollIntoView({ block: "nearest", inline: "nearest" });
+    };
+    requestAnimationFrame(attempt);
+  }, []);
+
+  // Esc 回首页；方向键仅在此处生效：图标按网格二维移动，走到行末继续按左右则切换分组
+  useEscapeLayer("grid", open, onClose, ESC_PRIORITY.grid);
+  useArrowNavigation(gridScrollRef, {
+    enabled: open,
+    orientation: "grid",
+    selector: navSelector,
+    autoEnter: true, // 宫格展开后不必先 Tab，直接按方向键即可进入
+    enterFrom: "[data-dock], [data-pagination]", // 用 Dock / 圆点打开宫格后，焦点还在它们上面也能直接进
+    blockWhenOverlay: true, // 设置面板/弹窗打开时完全让位，否则在设置页按左右会把分组切掉
+    onExit: (dir) => {
+      if (dir !== "right" && dir !== "left") return; // 上下到边界不做任何事，按键交还给浏览器
+      const scope = gridScrollRef.current;
+      const from = scope ? Array.from(scope.querySelectorAll<HTMLElement>(navSelector)).indexOf(document.activeElement as HTMLElement) : -1;
+      const next = dir === "right" ? (groupIdx + 1) % groups.length : (groupIdx - 1 + groups.length) % groups.length;
+      onGroupChange(next);
+      // 尽量落在新分组的同一位置（同列同行），越界则落到末项
+      focusAfterGroupChange(next, Math.max(from, 0));
+    },
+  });
+
   const handleAdd = (data: { name: string; url: string }) => {
     const targetIdx = getTargetGroupIdxForAdd(groupIdx, groupsData);
     const { next } = addShortcut(groupsData, targetIdx, data);
@@ -357,6 +406,7 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
             <motion.div
               key={groupIdx}
               ref={gridRef}
+              data-grid-group={groupIdx}
               initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8, filter: "blur(6px)" }}
               animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, filter: "blur(0px)" }}
               exit={reduce ? { opacity: 0 } : { opacity: 0, y: -6, filter: "blur(6px)" }}
@@ -431,6 +481,7 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
                       href={item.url}
                       target="_blank"
                       rel="noopener noreferrer"
+                      data-nav-item
                       draggable={false}
                       onDragStart={(e) => e.preventDefault()}
                       onClick={(e) => {
@@ -472,6 +523,7 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
               >
                 <button
                   type="button"
+                  data-nav-item
                   aria-label="添加图标"
                   onClick={() => setAddOpen(true)}
                   className="flex w-full flex-col items-center justify-center gap-2 py-1 text-center"

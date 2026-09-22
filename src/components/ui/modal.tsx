@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { XIcon } from "@phosphor-icons/react";
-import { useBodyScrollLock, useEscapeKey } from "@/lib/hooks";
+import { useBodyScrollLock, useFocusTrap } from "@/lib/hooks";
+import { ESC_PRIORITY, useArrowNavigation, useEscapeLayer } from "@/lib/keyboard";
+
+/** 弹窗内参与方向键导航的元素：表单控件与按钮（隐藏的 file input 会被可见性过滤掉） */
+const MODAL_NAV_SELECTOR =
+  "input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], [data-nav-item]";
 
 type Props = {
   open: boolean;
@@ -18,19 +23,46 @@ type Props = {
 export function Modal({ open, onClose, title, children, footer, width = 440 }: Props) {
   const reduce = useReducedMotion();
   const panelRef = useRef<HTMLDivElement>(null);
+  const uid = useId();
 
-  useEscapeKey(onClose, open);
+  // Esc 走层栈：设置面板上叠弹窗时只关弹窗，不会连带关掉设置
+  useEscapeLayer(`modal-${uid}`, open, onClose, ESC_PRIORITY.modal);
   useBodyScrollLock(open);
+  // Tab 不再跑出弹窗（注意必须在下方 autofocus 之前注册，这样表单弹窗的最终焦点仍落在输入框）
+  useFocusTrap(panelRef as React.RefObject<HTMLElement | null>, open);
 
-  // 自动聚焦关闭按钮或面板
+  // Esc 兜底：全局层栈处理过 Esc 时会 preventDefault，这里不会重复触发；
+  // 万一层栈因故没接管，最上层的弹窗仍能关掉，不会出现「按 Esc 没反应」。
+  // 判定用 DOM 里最后一个 dialog，天然只关最上层。
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const nodes = document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]');
+      if (nodes[nodes.length - 1] !== panel) return;
+      e.preventDefault();
+      onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  // 弹窗内上下键/左右键等价：在表单控件、头部关闭按钮与底部按钮间移动焦点
+  // （含“添加自定义搜索引擎”这类表单弹窗）。输入框的 ←→ 仍留给光标，
+  // 多行文本与下拉框保持原生行为。
+  useArrowNavigation(panelRef, { enabled: open, orientation: "vertical", selector: MODAL_NAV_SELECTOR });
+
+  // 自动聚焦：data-autofocus > 输入框 > 首个可聚焦元素
   useEffect(() => {
     if (!open) return;
     const id = requestAnimationFrame(() => {
       const el = panelRef.current;
       if (!el) return;
-      // data-autofocus 优先于 DOM 顺序（否则始终聚焦到头部关闭按钮，表单类弹窗体验差）
       const focusable =
         el.querySelector<HTMLElement>("[data-autofocus]") ??
+        el.querySelector<HTMLElement>("input:not([disabled]), textarea:not([disabled])") ??
         el.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
       (focusable ?? el).focus();
     });
