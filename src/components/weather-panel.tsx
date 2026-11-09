@@ -23,23 +23,72 @@ import {
 import { useClickOutside, useFocusTrap, limeDropdownMotion } from "@/lib/hooks";
 // Esc 改走层栈：原来各自监听 document，层栈会先截获，否则会失效
 import { ESC_PRIORITY, useEscapeLayer } from "@/lib/keyboard";
+import { springEase } from "@/lib/motion";
+import { KEYS, readCacheEntry, safeGet, safeRemove, safeSet, writeCacheEntry } from "@/lib/storage";
 
 type WeatherCurrent = { temp: number; feelsLike: number; humidity: number; wind: number; text: string; icon: string; code: number; time: string };
 type WeatherDaily = { date: string; max: number; min: number; text: string; icon: string; code: number; precip?: number | null };
-type WeatherData = { city: string; current: WeatherCurrent; daily: WeatherDaily[]; source: string; updateTime: string };
+type WeatherData = {
+  city: string;
+  current: WeatherCurrent;
+  daily: WeatherDaily[];
+  source: string;
+  updateTime: string;
+  model?: string;
+  locationSource?: "city" | "coords";
+  stale?: boolean;
+  notice?: string;
+};
 
 const QUICK_CITIES = ["北京", "上海", "广州", "深圳", "杭州", "南京", "成都", "重庆", "武汉", "西安", "苏州", "天津"];
-const CITY_KEY = "startpage:weatherCity";
 
 function getStoredCity(): string {
-  if (typeof window === "undefined") return "";
-  return localStorage.getItem(CITY_KEY) || "";
+  return safeGet(KEYS.weatherCity) || "";
+}
+
+/** 用户手动选过城市后，不再被自动定位覆盖 */
+function isPinnedCity(): boolean {
+  return safeGet(KEYS.weatherCityPinned) === "1";
+}
+
+/** 本地日期，不能用 toISOString()（UTC 会让北京时间 0-8 点错一天） */
+function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function formatAge(at: number): string {
+  const minutes = Math.max(0, Math.round((Date.now() - at) / 60000));
+  if (minutes < 1) return "刚刚";
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.round(minutes / 60);
+  return hours < 24 ? `${hours} 小时前` : `${Math.round(hours / 24)} 天前`;
 }
 
 async function requestWeather(url: string): Promise<WeatherData> {
-  const r = await fetch(url, { cache: "no-store" });
-  if (!r.ok) throw new Error(`请求失败 ${r.status}`);
-  return (await r.json()) as WeatherData;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const r = await fetch(url, { cache: "no-store", signal: controller.signal });
+    if (!r.ok) {
+      const detail = (await r.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(detail?.error ?? `请求失败 ${r.status}`);
+    }
+    return (await r.json()) as WeatherData;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** 接口全挂时展示上次成功数据，而不是空白面板 */
+function cachedWeather(): WeatherData | null {
+  const entry = readCacheEntry<WeatherData>(KEYS.weatherCache);
+  if (!entry) return null;
+  return {
+    ...entry.value,
+    stale: true,
+    notice: `天气服务暂不可用，显示 ${formatAge(entry.at)} 的缓存数据`,
+  };
 }
 
 function WeatherPhosphorIcon({ code, size = 20 }: { code: number; size?: number }) {
@@ -70,6 +119,7 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
   const [showSearch, setShowSearch] = useState(false);
   const [forecastPage, setForecastPage] = useState(0);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [autoLocateKey, setAutoLocateKey] = useState(0);
   const titleId = "weather-title";
 
   // 每次打开重置到“今天”，避免上次浏览的分页/选中日期残留
@@ -79,39 +129,74 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
     setSelectedDate(null);
   }, [open]);
 
+  const reqIdRef = useRef(0);
+
+  /** 统一请求入口：只让最后一次请求生效，避免定位 / IP / 手动切换的结果互相覆盖 */
+  const applyWeather = async (url: string, options: { pin?: boolean; closeSearch?: boolean } = {}) => {
+    const id = ++reqIdRef.current;
+    setLoading(true);
+    setError(null);
+    try {
+      const j = await requestWeather(url);
+      if (id !== reqIdRef.current) return;
+      const pinned = options.pin === true || isPinnedCity();
+      const notices = [
+        j.notice,
+        !pinned && j.locationSource === "coords" ? "城市由定位推测，点上方城市名可手动切换" : null,
+      ].filter(Boolean);
+      setData({ ...j, notice: notices.join(" · ") || undefined });
+      setCity(j.city);
+      setSelectedDate(j.daily[0]?.date ?? null);
+      setForecastPage(0);
+      safeSet(KEYS.weatherCity, j.city);
+      if (options.pin) safeSet(KEYS.weatherCityPinned, "1");
+      writeCacheEntry(KEYS.weatherCache, j);
+      if (options.closeSearch) setShowSearch(false);
+    } catch (e) {
+      if (id !== reqIdRef.current) return;
+      const cached = cachedWeather();
+      if (cached) {
+        setData(cached);
+        setCity(cached.city);
+        setSelectedDate(cached.daily[0]?.date ?? null);
+        if (options.closeSearch) setShowSearch(false);
+      } else {
+        setError(e instanceof Error ? e.message : "获取失败");
+      }
+    } finally {
+      if (id === reqIdRef.current) setLoading(false);
+    }
+  };
+
+  // 打开面板：用户手动选过城市就一直用它，不再被自动定位覆盖回去
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     const stored = getStoredCity();
 
-    const applyWeather = async (url: string) => {
-      if (cancelled) return;
-      setLoading(true);
-      setError(null);
-      try {
-        const j = await requestWeather(url);
-        if (cancelled) return;
-        setData(j);
-        setCity(j.city);
-        setSelectedDate(j.daily[0]?.date ?? null);
-        localStorage.setItem(CITY_KEY, j.city);
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "获取失败");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+    const invalidate = () => {
+      cancelled = true;
+      reqIdRef.current++;
     };
 
-    const fetchByCity = (c: string) => applyWeather(`/api/weather?city=${encodeURIComponent(c)}`);
-    const fetchByCoords = (lat: number, lon: number) => applyWeather(`/api/weather?lat=${lat}&lon=${lon}`);
+    if (isPinnedCity() && stored) {
+      void applyWeather(`/api/weather?city=${encodeURIComponent(stored)}`, { pin: false });
+      return invalidate;
+    }
+
+    const fetchByCity = (c: string) => applyWeather(`/api/weather?city=${encodeURIComponent(c)}`, { pin: false });
+    const fetchByCoords = (lat: number, lon: number) => applyWeather(`/api/weather?lat=${lat}&lon=${lon}`, { pin: false });
 
     const tryIp = async (): Promise<boolean> => {
       try {
-        const r = await fetch("/api/ip", { cache: "no-store" });
-        const j = (await r.json()) as { city?: string };
-        if (j.city && !cancelled) {
-          const c = j.city.replace(/市$/, "");
-          await fetchByCity(c);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        const r = await fetch("/api/ip", { cache: "no-store", signal: controller.signal });
+        clearTimeout(timer);
+        const j = (await r.json()) as { city?: string; source?: string };
+        // fallback 表示所有定位源都挂了，别把兜底的「上海」当成用户真实位置
+        if (j.city && j.source !== "fallback" && !cancelled) {
+          await fetchByCity(j.city.replace(/市$/, ""));
           return true;
         }
       } catch {}
@@ -146,27 +231,14 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
       })();
     }
 
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
+    return invalidate;
+    // applyWeather 只依赖稳定的 setState 与 ref；autoLocateKey 用于「恢复自动定位」后重跑定位链
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, autoLocateKey]);
 
-  const fetchWeather = async (targetCity: string) => {
-    setLoading(true);
-    setError(null);
-    setForecastPage(0);
-    try {
-      const j = await requestWeather(`/api/weather?city=${encodeURIComponent(targetCity)}`);
-      setData(j);
-      setCity(j.city);
-      setSelectedDate(j.daily[0]?.date ?? null);
-      localStorage.setItem(CITY_KEY, j.city);
-      setShowSearch(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "获取失败");
-    } finally {
-      setLoading(false);
-    }
+  /** 手动查询 / 切换城市：记住选择，之后打开面板不再自动定位 */
+  const fetchWeather = (targetCity: string) => {
+    void applyWeather(`/api/weather?city=${encodeURIComponent(targetCity)}`, { pin: true, closeSearch: true });
   };
 
   useClickOutside(panelRef as React.RefObject<HTMLElement | null>, () => onClose(), open, { ignoreSelectors: ["[data-dock]"] });
@@ -184,7 +256,7 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
   const pageDaily = data ? data.daily.slice(forecastPage * 7, forecastPage * 7 + 7) : [];
   const selectedDaily = data && selectedDate ? (data.daily.find((d) => d.date === selectedDate) ?? null) : null;
   const selectedDailyDate = selectedDaily ? new Date(`${selectedDaily.date}T12:00:00`) : null;
-  const selectedDailyIsToday = selectedDaily ? new Date().toISOString().slice(0, 10) === selectedDaily.date : false;
+  const selectedDailyIsToday = selectedDaily ? localToday() === selectedDaily.date : false;
 
   return (
     <AnimatePresence>
@@ -258,7 +330,7 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] as unknown as never }}
+                  transition={{ duration: 0.22, ease: springEase }}
                   className="overflow-hidden border-b border-zinc-100 bg-white dark:border-zinc-700/50 dark:bg-zinc-800"
                 >
                   <div className="px-4 pb-3 pt-2">
@@ -302,6 +374,19 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
                         </button>
                       ))}
                     </div>
+                    {isPinnedCity() && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          safeRemove(KEYS.weatherCityPinned);
+                          setShowSearch(false);
+                          setAutoLocateKey((k) => k + 1);
+                        }}
+                        className="mt-2 text-[11px] font-medium text-zinc-500 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100"
+                      >
+                        恢复自动定位
+                      </button>
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -332,8 +417,13 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
                         </div>
                         <p className="mt-1.5 text-[13px] text-zinc-500 dark:text-zinc-400">体感 {data.current.feelsLike}° · 湿度 {data.current.humidity}% · 风速 {data.current.wind}km/h</p>
                         <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
-                          {new Date(data.updateTime).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} 更新 · 数据来源 {data.source === "open-meteo" ? "Open-Meteo" : data.source}
+                          {new Date(data.updateTime).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} 更新 · {data.stale ? "离线缓存" : "数值预报"} · 来源 {(data.source ?? "").startsWith("open-meteo") ? "Open-Meteo" : data.source}
                         </p>
+                        {data.notice && (
+                          <p role="status" className="mt-1 text-[11px] leading-relaxed text-amber-600 dark:text-amber-400">
+                            {data.notice}
+                          </p>
+                        )}
                       </div>
                       <span className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-700 dark:ring-zinc-600" aria-hidden>
                         <WeatherPhosphorIcon code={data.current.code} size={36} />
@@ -402,7 +492,7 @@ export function WeatherPanel({ open, onClose }: { open: boolean; onClose: () => 
                     <div className="grid grid-cols-7 gap-[3px] sm:gap-1.5" role="group" aria-label="每日天气预报">
                       {pageDaily.map((d) => {
                         const dt = new Date(d.date);
-                        const isToday = new Date().toISOString().slice(0, 10) === d.date;
+                        const isToday = localToday() === d.date;
                         const isSelected = selectedDate === d.date;
                         const week = ["日", "一", "二", "三", "四", "五", "六"][dt.getDay()];
                         return (

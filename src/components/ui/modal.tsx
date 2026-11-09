@@ -6,6 +6,7 @@ import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { XIcon } from "@phosphor-icons/react";
 import { useBodyScrollLock, useFocusTrap } from "@/lib/hooks";
 import { ESC_PRIORITY, useArrowNavigation, useEscapeLayer } from "@/lib/keyboard";
+import { springEnterEase } from "@/lib/motion";
 
 /** 弹窗内参与方向键导航的元素：表单控件与按钮（隐藏的 file input 会被可见性过滤掉） */
 const MODAL_NAV_SELECTOR =
@@ -100,7 +101,7 @@ export function Modal({ open, onClose, title, children, footer, width = 440 }: P
             transition={
               reduce
                 ? ({ duration: 0.16 } as unknown as never)
-                : ({ duration: 0.28, ease: [0.16, 1, 0.3, 1] } as unknown as never)
+                : ({ duration: 0.28, ease: springEnterEase } as unknown as never)
             }
             style={{ width: typeof width === "number" ? `${width}px` : width, maxWidth: "calc(100vw - 32px)" }}
             className="gpu glass-panel relative flex max-h-[min(86vh,640px)] w-full flex-col overflow-hidden rounded-[20px] shadow-[0_24px_64px_rgba(0,0,0,0.22)] outline-none"

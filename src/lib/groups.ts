@@ -1,7 +1,8 @@
 import { DEFAULT_GROUPS, type Group, type Shortcut } from "./data";
+import { KEYS, EVENTS, dispatchEvent, writeJson } from "./storage";
 
-export const GROUPS_KEY = "startpage:groups";
-export const ITEMS_KEY = "startpage:items";
+export const GROUPS_KEY = KEYS.groups;
+export const ITEMS_KEY = KEYS.items;
 
 function uid() {
   return `s_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -21,14 +22,11 @@ export function loadGroups(): Group[] {
 
 export function saveGroups(groups: Group[]) {
   if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(GROUPS_KEY, JSON.stringify(groups));
-    const flat = groups.flatMap((g) => g.shortcuts);
-    localStorage.setItem(ITEMS_KEY, JSON.stringify(flat));
-    window.dispatchEvent(new Event("groups-change"));
-    // 兼容旧监听
-    window.dispatchEvent(new Event("storage"));
-  } catch {}
+  writeJson(GROUPS_KEY, groups);
+  writeJson(ITEMS_KEY, groups.flatMap((g) => g.shortcuts));
+  dispatchEvent(EVENTS.groupsChange);
+  // 兼容旧监听：历史版本把本页变更也伪装成 storage 事件
+  dispatchEvent("storage");
 }
 
 export function addShortcut(

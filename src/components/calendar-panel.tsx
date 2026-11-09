@@ -18,7 +18,7 @@ import {
 } from "@/lib/calendar";
 
 type HolidayYearEntry = { name?: string; type?: string; rest?: number; holiday?: boolean };
-type HolidayYearResponse = { data?: Record<string, HolidayYearEntry> };
+type HolidayYearResponse = { data?: Record<string, HolidayYearEntry>; partial?: boolean };
 type CalendarView = { year: number; month: number };
 
 const WEEK_LABELS = ["一", "二", "三", "四", "五", "六", "日"];
@@ -34,6 +34,7 @@ export const CalendarPanel = memo(function CalendarPanel({ open, onClose }: { op
   });
   const [selected, setSelected] = useState<string>(() => formatDate(new Date()));
   const [holidayCache, setHolidayCache] = useState<Record<string, HolidayInfo>>({});
+  const [holidayPartial, setHolidayPartial] = useState(false);
   const [detail, setDetail] = useState<{ lunar: LunarInfo; holiday: HolidayInfo | null } | null>(null);
   const holidayYearsRef = useRef(new Set<number>());
   const detailSourceRef = useRef<"cache" | "single">("cache");
@@ -112,12 +113,12 @@ export const CalendarPanel = memo(function CalendarPanel({ open, onClose }: { op
     if (yearsToLoad.length === 0) return;
 
     const controller = new AbortController();
-    const loadYear = async (year: number): Promise<Record<string, HolidayInfo> | null> => {
+    const loadYear = async (year: number): Promise<{ entries: Record<string, HolidayInfo> | null; partial: boolean }> => {
       try {
         const r = await fetch(`/api/calendar?year=${year}`, { cache: "no-store", signal: controller.signal });
-        if (!r.ok) return null;
+        if (!r.ok) return { entries: null, partial: false };
         const j = (await r.json()) as HolidayYearResponse;
-        if (!j.data) return null;
+        if (!j.data) return { entries: null, partial: false };
 
         const next: Record<string, HolidayInfo> = {};
         for (const [monthDay, value] of Object.entries(j.data)) {
@@ -128,20 +129,21 @@ export const CalendarPanel = memo(function CalendarPanel({ open, onClose }: { op
           const dateStr = `${year}-${monthDay}`;
           next[dateStr] = { name, isHoliday, isWorkday, type: type ?? (isHoliday ? "holiday" : isWorkday ? "workday" : null) };
         }
-        return next;
+        return { entries: next, partial: !!j.partial };
       } catch {
-        return null;
+        return { entries: null, partial: false };
       }
     };
 
-    void Promise.all(yearsToLoad.map(async (year) => ({ year, data: await loadYear(year) }))).then((results) => {
+    void Promise.all(yearsToLoad.map(async (year) => ({ year, ...(await loadYear(year)) }))).then((results) => {
       if (controller.signal.aborted) return;
       const next: Record<string, HolidayInfo> = {};
       for (const result of results) {
-        if (!result.data) continue;
+        if (!result.entries) continue;
         holidayYearsRef.current.add(result.year);
-        Object.assign(next, result.data);
+        Object.assign(next, result.entries);
       }
+      setHolidayPartial(results.some((r) => r.partial && !!r.entries));
       if (Object.keys(next).length > 0) setHolidayCache((prev) => ({ ...prev, ...next }));
     });
 
@@ -381,6 +383,11 @@ export const CalendarPanel = memo(function CalendarPanel({ open, onClose }: { op
                 </button>
               </div>
 
+              {holidayPartial && (
+                <p role="status" className="mt-1.5 text-[11px] leading-relaxed text-amber-600 dark:text-amber-400">
+                  节假日接口暂不可用，当前仅显示传统节日与周末
+                </p>
+              )}
               <div className="mt-1 flex flex-col gap-3 sm:gap-4">
                 <div className="min-w-0 w-full">
                   <div className="grid grid-cols-7 gap-x-1 gap-y-0 text-center sm:gap-x-2 sm:gap-y-0" role="row">

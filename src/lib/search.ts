@@ -1,9 +1,10 @@
 import { SEARCH_ENGINES, type SearchEngine } from "./data";
+import { KEYS } from "./storage";
 
-export const ENGINE_KEY = "startpage:engine";
-export const ENGINES_KEY = "startpage:engines";
-export const HISTORY_KEY = "startpage:searchHistory";
-export const SHOW_HISTORY_KEY = "startpage:showSearchHistory";
+export const ENGINE_KEY = KEYS.engine;
+export const ENGINES_KEY = KEYS.engines;
+export const HISTORY_KEY = KEYS.searchHistory;
+export const SHOW_HISTORY_KEY = KEYS.showSearchHistory;
 
 export function loadEngines(): SearchEngine[] {
   if (typeof window === "undefined") return SEARCH_ENGINES;

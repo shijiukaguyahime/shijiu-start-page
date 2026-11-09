@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import Sortable from "sortablejs";
-import { CalendarBlankIcon, FireIcon, PlusIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
+import { PlusIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
 import { DEFAULT_GROUPS, type Group, type Shortcut } from "@/lib/data";
 import { DropdownMenu } from "@/components/ui/dropdown";
 import { IconFormModal } from "@/components/ui/icon-form-modal";
@@ -11,6 +11,7 @@ import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { message } from "@/components/ui/message";
 import { Favicon } from "@/components/ui/favicon";
 import { ESC_PRIORITY, setKbdMode, useArrowNavigation, useEscapeLayer } from "@/lib/keyboard";
+import { springEase } from "@/lib/motion";
 import {
   GROUPS_KEY,
   ITEMS_KEY,
@@ -22,15 +23,10 @@ import {
   updateShortcut,
 } from "@/lib/groups";
 
-type GridItem = Shortcut & {
-  w?: 1 | 2;
-  h?: 1 | 2 | 3;
-  widget?: "calendar" | "hotlist";
-};
+type GridItem = Shortcut;
 
 function buildItems(): GridItem[] {
-  const base = DEFAULT_GROUPS.flatMap((g) => g.shortcuts) as GridItem[];
-  return base.map((b) => ({ ...b, w: 1 as const, h: 1 as const }));
+  return DEFAULT_GROUPS.flatMap((g) => g.shortcuts);
 }
 
 type Props = {
@@ -77,10 +73,10 @@ function mergeItemsWithGroups(prev: GridItem[], groupFlat: GridItem[]): GridItem
   const toAdd = groupFlat.filter((s) => !existing.has(s.id));
   // 新图标始终追加到当前展示顺序末尾，避免“拖拽到队尾后再新增”跑到被拖拽图标前面
   for (const add of toAdd) {
-    next.push({ ...add, w: 1 as const, h: 1 as const });
+    next.push({ ...add });
   }
   if (next.length === 0 && groupFlat.length) {
-    return groupFlat.map((s) => ({ ...s, w: 1 as const, h: 1 as const }));
+    return groupFlat.map((s) => ({ ...s }));
   }
   return next;
 }
@@ -184,7 +180,7 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
           }),
     [items, groupsData, groupIdx],
   );
-  const displayItems = useMemo(() => (groupIdx === 0 ? filtered : filtered.filter((it) => !it.widget)), [filtered, groupIdx]);
+  const displayItems = filtered;
   const displayItemsRef = useRef<GridItem[]>(displayItems);
   useEffect(() => {
     displayItemsRef.current = displayItems;
@@ -414,47 +410,14 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
                 reduce
                   ? { duration: 0.14 }
                   : {
-                      opacity: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
-                      y: { duration: 0.26, ease: [0.22, 1, 0.36, 1] },
+                      opacity: { duration: 0.22, ease: springEase },
+                      y: { duration: 0.26, ease: springEase },
                       filter: { duration: 0.22, ease: "easeOut" },
                     }
               }
               className="grid auto-rows-fr grid-cols-4 gap-4 md:grid-cols-6 md:gap-4 lg:grid-cols-8 lg:gap-5 gpu"
             >
               {displayItems.map((item, idx) => {
-                const spanClass =
-                  item.w === 2 && item.h === 2
-                    ? "col-span-2 row-span-2 aspect-square"
-                    : item.w === 2 && item.h === 1
-                      ? "col-span-2 aspect-[2/1]"
-                      : item.w === 1 && item.h === 2
-                        ? "col-span-1 row-span-2 aspect-[1/2]"
-                        : "col-span-1 aspect-square";
-
-                if (item.widget) {
-                  return (
-                    <motion.div
-                      key={item.id}
-                      data-draggable
-                      data-id={item.id}
-                      initial={reduce ? false : { opacity: 0, y: 8, filter: "blur(4px)" }}
-                      animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                      transition={
-                        reduce
-                          ? { duration: 0 }
-                          : {
-                              duration: 0.32,
-                              delay: Math.min(idx * 0.012, 0.12),
-                              ease: [0.22, 1, 0.36, 1],
-                            }
-                      }
-                      className={`${spanClass} group/widget relative overflow-hidden rounded-[18px] border border-white/40 bg-white p-3 shadow-sm gpu`}
-                    >
-                      <WidgetContent item={item} />
-                    </motion.div>
-                  );
-                }
-
                 return (
                   <motion.div
                     key={item.id}
@@ -468,10 +431,10 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
                         : {
                             duration: 0.32,
                             delay: Math.min(idx * 0.012, 0.14),
-                            ease: [0.22, 1, 0.36, 1],
+                            ease: springEase,
                           }
                     }
-                    className={`${spanClass} group/app flex flex-col items-center justify-center gap-2 py-1 text-center gpu`}
+                    className="col-span-1 aspect-square group/app flex flex-col items-center justify-center gap-2 py-1 text-center gpu"
                     onContextMenu={(e) => handleContextMenu(e, item)}
                     onTouchStart={(e) => handleTouchStart(e, item)}
                     onTouchMove={handleTouchMove}
@@ -516,7 +479,7 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
                     : {
                         duration: 0.32,
                         delay: Math.min(displayItems.length * 0.012, 0.14),
-                        ease: [0.22, 1, 0.36, 1],
+                        ease: springEase,
                       }
                 }
                 className="col-span-1 aspect-square group/app flex flex-col items-center justify-center gap-2 py-1 text-center gpu"
@@ -592,47 +555,3 @@ export function AppGrid({ open, onClose, groupIdx, onGroupChange }: Props) {
   );
 }
 
-function WidgetContent({ item }: { item: GridItem }) {
-  if (item.widget === "calendar") {
-    const today = new Date();
-    return (
-      <div className="flex h-full w-full flex-col">
-        <div className="flex items-center gap-2 text-xs font-semibold text-zinc-500">
-          <CalendarBlankIcon weight="duotone" className="size-4" /> 日历
-          <span className="ml-auto text-[10px] font-normal">{today.toLocaleDateString("zh-CN", { month: "long" })}</span>
-        </div>
-        <div className="mt-2 grid flex-1 place-items-center">
-          <div className="text-center">
-            <div className="text-3xl font-light tracking-tight text-zinc-900">{today.getDate()}</div>
-            <div className="text-xs text-zinc-500">{today.toLocaleDateString("zh-CN", { weekday: "long" })}</div>
-          </div>
-        </div>
-        <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-zinc-400">
-          {["日", "一", "二", "三", "四", "五", "六"].map((d) => (
-            <span key={d}>{d}</span>
-          ))}
-        </div>
-      </div>
-    );
-  }
-  if (item.widget === "hotlist") {
-    const isWide = item.w === 2 && item.h === 1;
-    return (
-      <div className="flex h-full w-full flex-col">
-        <div className="flex items-center gap-2 text-xs font-semibold text-zinc-700">
-          <FireIcon weight="fill" className="size-3.5 text-orange-500" /> 热榜
-          <span className="ml-auto text-[10px] font-normal text-zinc-400">2x{item.h}</span>
-        </div>
-        <ul className={`mt-2 flex-1 space-y-1 ${isWide ? "overflow-hidden" : ""}`}>
-          {["AI 编程助手爆发", "Next.js 15 发布", "宫格布局重构", isWide ? null : "一言接口升级"].filter(Boolean).map((t, i) => (
-            <li key={i} className="flex items-center gap-2 truncate rounded-lg bg-zinc-50 px-2 py-1 text-xs text-zinc-600">
-              <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-[10px] font-bold text-white">{i + 1}</span>
-              <span className="truncate">{t as string}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    );
-  }
-  return null;
-}

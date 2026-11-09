@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { CheckCircleIcon, InfoIcon, WarningCircleIcon, XCircleIcon } from "@phosphor-icons/react";
+import { springEase } from "@/lib/motion";
 
 type MessageType = "info" | "success" | "warning" | "error";
 type MessageItem = {
@@ -89,7 +90,7 @@ export function MessageHost() {
                 ? ({ duration: 0.16 } as unknown as never)
                 : ({
                     duration: 0.32,
-                    ease: [0.22, 1, 0.36, 1],
+                    ease: springEase,
                   } as unknown as never)
             }
             className="pointer-events-auto dropdown-panel gpu flex max-w-[min(92vw,520px)] items-center gap-2.5 rounded-full px-4 py-2.5 text-sm font-medium"

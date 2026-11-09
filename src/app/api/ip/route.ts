@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createServerCache } from "@/lib/server-cache";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -16,7 +17,11 @@ async function fetchWithTimeout(url: string, ms = 3500) {
   }
 }
 
-export async function GET(req: NextRequest) {
+/** 定位结果 30 分钟内复用：天气面板每次打开都会请求，避免反复打三个开源定位源 */
+type IpResult = { city?: string; province?: string; region?: string; country?: string; ip?: string; source?: string; updateTime?: string };
+const ipCache = createServerCache<IpResult>(30 * 60_000, 16);
+
+async function resolveIp(req: NextRequest): Promise<NextResponse> {
   // 优先从请求头取真实 IP
   const forwarded = req.headers.get("x-forwarded-for");
   const realIp = req.headers.get("x-real-ip");
@@ -67,4 +72,20 @@ export async function GET(req: NextRequest) {
   } catch {}
 
   return NextResponse.json({ city: "上海", ip, source: "fallback", updateTime: new Date().toISOString() }, { headers: { "Cache-Control": "public, s-maxage=600" } });
+}
+
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const cached = ipCache.fresh("location");
+  if (cached) {
+    return NextResponse.json(cached, { headers: { "Cache-Control": "no-store", "X-IP-Cache": "hit" } });
+  }
+  const res = await resolveIp(req);
+  if (res.ok) {
+    try {
+      const payload = (await res.clone().json()) as IpResult;
+      // fallback 是所有上游都失败时的占位城市，不缓存，避免一直把「上海」当成真实位置
+      if (payload.source && payload.source !== "fallback") ipCache.set("location", payload);
+    } catch {}
+  }
+  return res;
 }

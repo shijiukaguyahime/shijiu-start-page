@@ -40,6 +40,8 @@ import { message } from "@/components/ui/message";
 import { GROUPS_KEY, ITEMS_KEY, addShortcut, loadGroups, removeShortcut, updateShortcut } from "@/lib/groups";
 import { useBodyScrollLock, useFocusTrap } from "@/lib/hooks";
 import { ESC_PRIORITY, useEscapeLayer, usePaneNavigation } from "@/lib/keyboard";
+import { springEase, springEnterEase } from "@/lib/motion";
+import { KEYS } from "@/lib/storage";
 import {
   GLASS_OPACITY_KEY,
   THEME_KEY,
@@ -160,7 +162,7 @@ export function SettingsPanel({ open, onClose, initialTab = "appearance", onTabC
             initial={reduce ? { opacity: 0 } : { opacity: 0, y: 16, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={reduce ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }}
-            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] as unknown as never }}
+            transition={{ duration: 0.28, ease: springEnterEase }}
             className="relative flex h-[min(640px,85vh)] w-full max-w-[820px] overflow-hidden rounded-[20px] glass-panel shadow-[0_24px_64px_rgba(0,0,0,0.22)] max-md:flex-col"
           >
             {/* 移动端顶部栏：标题与关闭左右布局，避免与横向 Tab 重叠 */}
@@ -243,7 +245,7 @@ export function SettingsPanel({ open, onClose, initialTab = "appearance", onTabC
                     initial={reduce ? { opacity: 0 } : { opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
-                    transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] as unknown as never }}
+                    transition={{ duration: 0.18, ease: springEase }}
                   >
                     {active === "appearance" && <AppearancePane />}
                     {active === "wallpaper" && <WallpaperPane />}
@@ -454,27 +456,43 @@ function WallpaperPane() {
 
   const [bingList, setBingList] = useState<string[]>([]);
   const [bingLoading, setBingLoading] = useState(false);
+  const [bingOffline, setBingOffline] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setBingLoading(true);
-    const idxs = Array.from({ length: 8 }, (_, i) => i);
-    Promise.all(
-      idxs.map((idx) =>
-        fetch(`https://bing.biturl.top/?resolution=UHD&format=json&index=${idx}&mkt=zh-CN`)
-          .then((r) => r.json())
-          .then((j) => (j.url as string) || null)
-          .catch(() => null),
-      ),
-    )
-      .then((urls) => {
-        if (cancelled) return;
-        const filtered = (urls.filter(Boolean) as string[]).filter((u, i, arr) => arr.indexOf(u) === i);
+
+    const fetchOne = async (index: number): Promise<string | null> => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4000);
+      try {
+        const r = await fetch(`https://bing.biturl.top/?resolution=UHD&format=json&index=${index}&mkt=zh-CN`, {
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        if (!r.ok) return null;
+        const j = (await r.json()) as { url?: string };
+        return j.url && j.url.startsWith("http") ? j.url : null;
+      } catch {
+        return null;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    void Promise.all(Array.from({ length: 8 }, (_, i) => fetchOne(i))).then((urls) => {
+      if (cancelled) return;
+      const filtered = (urls.filter(Boolean) as string[]).filter((u, i, arr) => arr.indexOf(u) === i);
+      if (filtered.length) {
         setBingList(filtered.slice(0, 8));
-      })
-      .finally(() => {
-        if (!cancelled) setBingLoading(false);
-      });
+        setBingOffline(false);
+      } else {
+        // 上游整体不可用时展示本地历史，避免设置页这一块完全空白
+        setBingList(getWallpaperHistory().filter((u) => /bing/i.test(u)).slice(0, 8));
+        setBingOffline(true);
+      }
+      setBingLoading(false);
+    });
     return () => {
       cancelled = true;
     };
@@ -516,7 +534,9 @@ function WallpaperPane() {
       </Section>
 
       <Section title="必应壁纸列表">
-        <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">精选 8 张，点击直接设为壁纸。</p>
+        <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+          {bingOffline ? "壁纸接口暂不可用，以下为本地历史记录，点击可直接设为壁纸。" : "精选 8 张，点击直接设为壁纸。"}
+        </p>
         {bingLoading ? (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -550,7 +570,7 @@ function WallpaperPane() {
             })}
           </div>
         ) : (
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">加载失败，请稍后重试。</p>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">暂无可用壁纸，可稍后重试或使用默认壁纸。</p>
         )}
       </Section>
 
@@ -1116,7 +1136,24 @@ function IconsPane() {
   );
 }
 
-const DATA_KEYS = ["startpage:wallpaper", "startpage:wallpaperHistory", "startpage:items", "startpage:groups", "startpage:gridGroup", "startpage:engine", "startpage:engines", "startpage:searchHistory", "startpage:showSearchHistory", "startpage:theme", "startpage:glassOpacity", "startpage:wallpaperBrightness", "startpage:wallpaperBlur"] as const;
+/** 备份范围统一取自 KEYS；天气数据缓存是临时兜底数据，不进备份 */
+const DATA_KEYS = [
+  KEYS.wallpaper,
+  KEYS.wallpaperHistory,
+  KEYS.items,
+  KEYS.groups,
+  KEYS.gridGroup,
+  KEYS.engine,
+  KEYS.engines,
+  KEYS.searchHistory,
+  KEYS.showSearchHistory,
+  KEYS.theme,
+  KEYS.glassOpacity,
+  KEYS.wallpaperBrightness,
+  KEYS.wallpaperBlur,
+  KEYS.weatherCity,
+  KEYS.weatherCityPinned,
+] as const;
 
 function DataPane() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);

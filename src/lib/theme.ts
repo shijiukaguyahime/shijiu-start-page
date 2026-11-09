@@ -1,13 +1,15 @@
+import { KEYS, safeGet } from "./storage";
+
 export type ThemeMode = "system" | "light" | "dark";
 
-export const THEME_KEY = "startpage:theme";
-export const GLASS_OPACITY_KEY = "startpage:glassOpacity";
-export const WALLPAPER_BRIGHTNESS_KEY = "startpage:wallpaperBrightness";
-export const WALLPAPER_BLUR_KEY = "startpage:wallpaperBlur";
+export const THEME_KEY = KEYS.theme;
+export const GLASS_OPACITY_KEY = KEYS.glassOpacity;
+export const WALLPAPER_BRIGHTNESS_KEY = KEYS.wallpaperBrightness;
+export const WALLPAPER_BLUR_KEY = KEYS.wallpaperBlur;
 
 export function readTheme(): ThemeMode {
   if (typeof window === "undefined") return "system";
-  const raw = localStorage.getItem(THEME_KEY);
+  const raw = safeGet(THEME_KEY);
   return raw === "light" || raw === "dark" ? raw : "system";
 }
 
@@ -19,7 +21,7 @@ export function resolveTheme(theme: ThemeMode): "light" | "dark" {
 
 export function readGlassOpacity(): number {
   if (typeof window === "undefined") return 40;
-  const raw = localStorage.getItem(GLASS_OPACITY_KEY);
+  const raw = safeGet(GLASS_OPACITY_KEY);
   if (raw === null) return 40;
   const value = Number(raw);
   return Number.isFinite(value) ? Math.min(80, Math.max(0, value)) : 40;
@@ -35,7 +37,7 @@ export const WALLPAPER_BLUR_DEFAULT = 100;
  */
 export function readWallpaperBlur(): number {
   if (typeof window === "undefined") return WALLPAPER_BLUR_DEFAULT;
-  const raw = localStorage.getItem(WALLPAPER_BLUR_KEY);
+  const raw = safeGet(WALLPAPER_BLUR_KEY);
   if (raw === null) return WALLPAPER_BLUR_DEFAULT;
   const value = Number(raw);
   return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : WALLPAPER_BLUR_DEFAULT;

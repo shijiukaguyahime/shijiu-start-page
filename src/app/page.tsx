@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { Wallpaper } from "@/components/wallpaper";
+import { Clock } from "@/components/clock";
 import { SearchBox, type SearchBoxHandle } from "@/components/search-box";
 import { DockBar } from "@/components/dock-bar";
 import { Hitokoto } from "@/components/hitokoto";
@@ -10,21 +11,15 @@ import { AppGrid } from "@/components/app-grid";
 import { SettingsPanel } from "@/components/settings-panel";
 import { DEFAULT_GROUPS, type Group } from "@/lib/data";
 import { loadGroups } from "@/lib/groups";
-import {
-  GLASS_OPACITY_KEY,
-  WALLPAPER_BRIGHTNESS_KEY,
-  applyGlassTokens,
-  readGlassOpacity,
-  readTheme,
-  resolveTheme,
-} from "@/lib/theme";
+import { KEYS, safeGet, safeSet } from "@/lib/storage";
+import { springEase } from "@/lib/motion";
+import { applyGlassTokens, readGlassOpacity, readTheme, resolveTheme } from "@/lib/theme";
 import { MessageHost } from "@/components/ui/message";
 import { ESC_PRIORITY, useEscapeLayer } from "@/lib/keyboard";
 import { WeatherPanel } from "@/components/weather-panel";
 import { CalendarPanel } from "@/components/calendar-panel";
 
 export default function Home() {
-  const [now, setNow] = useState<Date | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
   const [gridGroupIdx, setGridGroupIdx] = useState(0);
@@ -101,17 +96,22 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [gridGroupIdx, showGrid]);
 
-  // 宫格 Tab 持久化：展开收起保持选中态
+  // 宫格 Tab 持久化：展开收起保持选中态。上限取实际分组数，删组后不会指向不存在的分组
   useEffect(() => {
-    const saved = localStorage.getItem("startpage:gridGroup");
+    const saved = safeGet(KEYS.gridGroup);
     if (saved !== null) {
       const n = Number(saved);
-      if (!Number.isNaN(n) && n >= 0 && n <= DEFAULT_GROUPS.length) setGridGroupIdx(n);
+      // mount 时 groupsData 还是默认值，用实际落盘的分组数校验
+      if (!Number.isNaN(n) && n >= 0 && n <= loadGroups().length) setGridGroupIdx(n);
     }
   }, []);
   useEffect(() => {
-    localStorage.setItem("startpage:gridGroup", String(gridGroupIdx));
+    safeSet(KEYS.gridGroup, String(gridGroupIdx));
   }, [gridGroupIdx]);
+  // 分组在设置页被删除后，当前分页可能越界；归零而不是留一个空白宫格
+  useEffect(() => {
+    if (gridGroupIdx > groupsData.length) setGridGroupIdx(0);
+  }, [groupsData.length, gridGroupIdx]);
 
   // 外观持久化：主题/毛玻璃/壁纸亮度在刷新后即时生效（毛玻璃随主题自动切换基色，跟随系统时解析为实际明暗）
   useEffect(() => {
@@ -120,34 +120,22 @@ export default function Home() {
 
     const glassVal = readGlassOpacity();
     applyGlassTokens(isDark, glassVal);
-    const glassRaw = localStorage.getItem(GLASS_OPACITY_KEY);
+    const glassRaw = safeGet(KEYS.glassOpacity);
     if (glassRaw !== null) {
       const v = Number(glassRaw);
-      if (!Number.isFinite(v) || v > 80 || v < 0) localStorage.setItem(GLASS_OPACITY_KEY, String(glassVal));
+      if (!Number.isFinite(v) || v > 80 || v < 0) safeSet(KEYS.glassOpacity, String(glassVal));
     }
 
-    const bright = localStorage.getItem(WALLPAPER_BRIGHTNESS_KEY);
+    const bright = safeGet(KEYS.wallpaperBrightness);
     if (bright) {
       const v = Number(bright);
       const norm = !Number.isFinite(v) || v === 0 ? 90 : Math.min(120, Math.max(70, v));
       document.documentElement.style.setProperty("--wallpaper-brightness", String(norm / 100));
-      if (v === 0 || v !== norm) localStorage.setItem(WALLPAPER_BRIGHTNESS_KEY, String(norm));
+      if (v === 0 || v !== norm) safeSet(KEYS.wallpaperBrightness, String(norm));
     } else {
       document.documentElement.style.setProperty("--wallpaper-brightness", "0.9");
     }
   }, []);
-
-  useEffect(() => {
-    const tick = () => setNow(new Date());
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  const hours = now ? String(now.getHours()).padStart(2, "0") : "";
-  const minutes = now ? String(now.getMinutes()).padStart(2, "0") : "";
-  const date = now?.toLocaleDateString("zh-CN", { month: "long", day: "numeric" }) ?? "";
-  const weekday = now?.toLocaleDateString("zh-CN", { weekday: "long" }) ?? "";
 
   const blurred = searchFocused || showGrid;
   const hitokotoVisible = searchFocused && !showGrid;
@@ -205,28 +193,7 @@ export default function Home() {
       <Wallpaper blurred={blurred} />
 
       <main className="relative z-10 flex min-h-0 flex-1 flex-col items-center px-4 pt-24 pb-24">
-        <div className="text-center" aria-live="off">
-          <time
-            className="block select-none text-7xl font-extralight tracking-tight text-white tabular-nums drop-shadow-[0_2px_14px_rgba(0,0,0,0.22)] sm:text-7xl"
-            aria-label={now ? `${hours}:${minutes}` : undefined}
-          >
-            {now ? (
-              <span className="inline-flex items-center justify-center">
-                <span>{hours}</span>
-                <span className="mx-2 inline-flex flex-col items-center justify-center gap-2">
-                  <span className="time-dot size-1.5 rounded-full bg-white shadow-[0_1px_6px_rgba(0,0,0,0.35)] dark:!bg-white" aria-hidden />
-                  <span className="time-dot size-1.5 rounded-full bg-white shadow-[0_1px_6px_rgba(0,0,0,0.35)] dark:!bg-white" aria-hidden />
-                </span>
-                <span>{minutes}</span>
-              </span>
-            ) : (
-              <span className="opacity-0">00:00</span>
-            )}
-          </time>
-          <p className="mt-1 text-sm font-medium tracking-wide text-white/85 drop-shadow-[0_1px_6px_rgba(0,0,0,0.25)]">
-            {now ? `${date} ${weekday}` : "\u00A0"}
-          </p>
-        </div>
+        <Clock />
 
         {/* 中央区域：搜索与宫格在时间下方、Dock 上方之间切换，柔和渐变 */}
         <div className="relative mt-6 flex min-h-[280px] w-full max-w-[880px] flex-col items-center">
@@ -241,8 +208,8 @@ export default function Home() {
                   reduce
                     ? { duration: 0.18 }
                     : {
-                        opacity: { duration: 0.28, ease: [0.22, 1, 0.36, 1] },
-                        y: { duration: 0.34, ease: [0.22, 1, 0.36, 1] },
+                        opacity: { duration: 0.28, ease: springEase },
+                        y: { duration: 0.34, ease: springEase },
                         filter: { duration: 0.3, ease: "easeOut" },
                       }
                 }
@@ -261,8 +228,8 @@ export default function Home() {
                   reduce
                     ? { duration: 0.18 }
                     : {
-                        opacity: { duration: 0.28, ease: [0.22, 1, 0.36, 1] },
-                        y: { duration: 0.36, ease: [0.22, 1, 0.36, 1] },
+                        opacity: { duration: 0.28, ease: springEase },
+                        y: { duration: 0.36, ease: springEase },
                         filter: { duration: 0.32, ease: "easeOut" },
                       }
                 }

@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { WALLPAPER_BLUR_DEFAULT, WALLPAPER_BRIGHTNESS_KEY, readWallpaperBlur } from "@/lib/theme";
+import { KEYS, EVENTS, dispatchEvent, safeGet, writeJson } from "@/lib/storage";
 
 const DEFAULT_WALLPAPER = "/default_bg.avif";
-export const WALLPAPER_KEY = "startpage:wallpaper";
+export const WALLPAPER_KEY = KEYS.wallpaper;
 export const BING_WALLPAPER = "https://bing.biturl.top/?resolution=UHD&format=image&index=0&mkt=zh-CN";
 export const NATURE_WALLPAPER = "https://wp.upx8.com/api.php?category=nature";
 
@@ -17,6 +18,7 @@ export function getWallpaper(): WallpaperValue {
     if (!raw) return { type: "default", url: DEFAULT_WALLPAPER };
     const j = JSON.parse(raw) as WallpaperValue;
     if (j?.url) {
+      // 旧版本曾允许上传自定义壁纸，本地文件地址已失效，统一回默认图
       if ((j.type as string) === "custom") return { type: "default", url: DEFAULT_WALLPAPER };
       return j;
     }
@@ -24,7 +26,7 @@ export function getWallpaper(): WallpaperValue {
   return { type: "default", url: DEFAULT_WALLPAPER };
 }
 
-export const WALLPAPER_HISTORY_KEY = "startpage:wallpaperHistory";
+export const WALLPAPER_HISTORY_KEY = KEYS.wallpaperHistory;
 export const WALLPAPER_HISTORY_MAX = 30;
 
 export function getWallpaperHistory(): string[] {
@@ -55,7 +57,7 @@ export function addWallpaperHistory(url: string) {
     deduped.unshift(url);
     const next = deduped.slice(0, WALLPAPER_HISTORY_MAX);
     localStorage.setItem(WALLPAPER_HISTORY_KEY, JSON.stringify(next));
-    window.dispatchEvent(new Event("wallpaper-history-change"));
+    dispatchEvent(EVENTS.wallpaperHistoryChange);
   } catch {}
 }
 
@@ -65,7 +67,7 @@ export function removeWallpaperHistory(url: string) {
     const list = getWallpaperHistory();
     const next = list.filter((u) => u !== url);
     localStorage.setItem(WALLPAPER_HISTORY_KEY, JSON.stringify(next));
-    window.dispatchEvent(new Event("wallpaper-history-change"));
+    dispatchEvent(EVENTS.wallpaperHistoryChange);
   } catch {}
 }
 
@@ -73,27 +75,42 @@ export function clearWallpaperHistory() {
   if (typeof window === "undefined") return;
   try {
     localStorage.removeItem(WALLPAPER_HISTORY_KEY);
-    window.dispatchEvent(new Event("wallpaper-history-change"));
+    dispatchEvent(EVENTS.wallpaperHistoryChange);
   } catch {}
+}
+
+async function fetchJsonWithTimeout<T>(url: string, ms: number): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: controller.signal, cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return (await res.json()) as T;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function fetchBingConcreteUrl(): Promise<string | null> {
   try {
-    const res = await fetch(`https://bing.biturl.top/?resolution=UHD&format=json&index=0&mkt=zh-CN`, { cache: "no-store" });
-    const j = (await res.json()) as { url?: string };
+    const j = await fetchJsonWithTimeout<{ url?: string }>(
+      `https://bing.biturl.top/?resolution=UHD&format=json&index=0&mkt=zh-CN`,
+      5000,
+    );
     if (j?.url && typeof j.url === "string" && j.url.startsWith("http")) return j.url;
   } catch {}
+  // json 接口挂了就返回 null：调用方会退回可跟随 302 的 image 地址，
+  // 组件层还有「历史图 → 默认图」兜底，不会出现空白壁纸
   return null;
 }
 
 export async function fetchNatureConcreteUrl(): Promise<string | null> {
   try {
-    // 经由同源 API 代理获取，避免 CDN 无 CORS 导致 fetch 被拦（开发/生产均受影响）
-    const res = await fetch("/api/nature", { cache: "no-store" });
-    const j = (await res.json()) as { url?: string; error?: string };
+    // 经同源 API 代理：服务端已做多源降级，正常不会返回 5xx
+    const j = await fetchJsonWithTimeout<{ url?: string }>("/api/nature", 8000);
     if (j?.url && typeof j.url === "string" && j.url.startsWith("http")) return j.url;
   } catch {}
-  // 降级：直连（可能在部分环境因 CORS 失败，仅作兜底）
+  // 代理整体不可用时直连兜底（部分环境可能因 CORS 失败）
   try {
     const res = await fetch(NATURE_WALLPAPER, { cache: "no-store", redirect: "follow" });
     if (res.url && res.url !== NATURE_WALLPAPER && res.url.startsWith("http")) return res.url;
@@ -131,19 +148,16 @@ export function wallpaperThumbUrl(url: string, width = 480): string {
 }
 
 export function setWallpaper(v: WallpaperValue) {
-  localStorage.setItem(WALLPAPER_KEY, JSON.stringify(v));
+  writeJson(WALLPAPER_KEY, v);
   // 仅保存具体图片 url（非请求接口），请求 url 会在 pick 时已解析为具体 url
   const isRequest = isWallpaperRequestUrl(v.url);
   if (v?.url && !isRequest) addWallpaperHistory(v.url);
-  else if (v?.url && isRequest) {
-    // 对于旧历史中已存的请求 url，仍尝试加入但下次会迁移为具体 url
-    // 不直接加入请求 url，避免历史去重失效
-  }
-  window.dispatchEvent(new Event("wallpaper-change"));
+  dispatchEvent(EVENTS.wallpaperChange);
 }
 
 export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
   const [url, setUrl] = useState(DEFAULT_WALLPAPER);
+  const [displayUrl, setDisplayUrl] = useState(DEFAULT_WALLPAPER);
   const [loaded, setLoaded] = useState(false);
   const [brightness, setBrightness] = useState(90);
   const [blur, setBlur] = useState(WALLPAPER_BLUR_DEFAULT);
@@ -151,7 +165,7 @@ export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
 
   useEffect(() => {
     const applyBrightness = () => {
-      const v = Number(localStorage.getItem(WALLPAPER_BRIGHTNESS_KEY));
+      const v = Number(safeGet(WALLPAPER_BRIGHTNESS_KEY));
       if (Number.isFinite(v) && v !== 0) setBrightness(Math.min(120, Math.max(70, v)));
       else setBrightness(90);
     };
@@ -186,9 +200,9 @@ export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
         });
         if (concrete && concrete !== w.url) {
           // 将解析出的具体图写回（缩略图/历史/背景共用同一地址），并保留 request 标记供下次刷新重新随机
-          localStorage.setItem(WALLPAPER_KEY, JSON.stringify({ ...w, url: concrete }));
+          writeJson(WALLPAPER_KEY, { ...w, url: concrete });
           addWallpaperHistory(concrete);
-          window.dispatchEvent(new Event("wallpaper-change"));
+          dispatchEvent(EVENTS.wallpaperChange);
         }
         return;
       }
@@ -209,27 +223,54 @@ export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
     };
     const onBright = () => applyBrightness();
     const onBlur = () => applyBlur();
-    window.addEventListener("wallpaper-change", onChange);
+    window.addEventListener(EVENTS.wallpaperChange, onChange);
     window.addEventListener("storage", onChange);
-    window.addEventListener("wallpaper-brightness-change" as never, onBright);
-    window.addEventListener("wallpaper-blur-change" as never, onBlur);
+    window.addEventListener(EVENTS.wallpaperBrightnessChange, onBright);
+    window.addEventListener(EVENTS.wallpaperBlurChange, onBlur);
     window.addEventListener("storage", onBright);
     window.addEventListener("storage", onBlur);
     return () => {
       requestSeqRef.current++;
-      window.removeEventListener("wallpaper-change", onChange);
+      window.removeEventListener(EVENTS.wallpaperChange, onChange);
       window.removeEventListener("storage", onChange);
-      window.removeEventListener("wallpaper-brightness-change" as never, onBright);
-      window.removeEventListener("wallpaper-blur-change" as never, onBlur);
+      window.removeEventListener(EVENTS.wallpaperBrightnessChange, onBright);
+      window.removeEventListener(EVENTS.wallpaperBlurChange, onBlur);
       window.removeEventListener("storage", onBright);
       window.removeEventListener("storage", onBlur);
     };
   }, []);
 
+  /**
+   * 图片探测 + 兜底链：开源壁纸源随时可能 404 / 被限流。
+   * 依次尝试「当前地址 → 历史里最近两张 → 本地默认图」，成功后才淡入，
+   * 避免加载失败时 loaded 永远为 false 导致整页只剩纯色背景。
+   */
   useEffect(() => {
-    const img = new Image();
-    img.src = url;
-    img.onload = () => setLoaded(true);
+    let cancelled = false;
+    const history = getWallpaperHistory()
+      .filter((u) => u !== url && !isWallpaperRequestUrl(u))
+      .slice(0, 2);
+    const candidates = [url, ...history, DEFAULT_WALLPAPER];
+    let index = 0;
+
+    setLoaded(false);
+    const tryNext = () => {
+      if (cancelled) return;
+      const candidate = candidates[index++];
+      if (!candidate) return;
+      const img = new Image();
+      img.onload = () => {
+        if (cancelled) return;
+        setDisplayUrl(candidate);
+        setLoaded(true);
+      };
+      img.onerror = tryNext;
+      img.src = candidate;
+    };
+    tryNext();
+    return () => {
+      cancelled = true;
+    };
   }, [url]);
 
   return (
@@ -237,7 +278,7 @@ export function Wallpaper({ blurred = false }: { blurred?: boolean }) {
       <div
         className="gpu absolute -inset-6 bg-cover bg-center transition-[filter,transform,opacity] duration-[620ms] ease-[var(--spring)]"
         style={{
-          backgroundImage: `url(${url})`,
+          backgroundImage: `url(${displayUrl})`,
           opacity: loaded ? 1 : 0,
           filter: blurred ? `blur(${(blur * 0.2).toFixed(1)}px) brightness(${((brightness / 100) * 0.92).toFixed(2)})` : `blur(0px) brightness(${brightness / 100})`,
           transform: blurred ? "scale(1.06) translateZ(0)" : "scale(1) translateZ(0)",

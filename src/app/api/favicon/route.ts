@@ -35,8 +35,10 @@ export async function GET(req: NextRequest) {
   const sources = getSources(domain);
 
   // 并发尝试所有源，带独立超时，任一成功即返回，避免串行等待
+  const controllers: AbortController[] = [];
   const attempts = sources.map(async (url) => {
     const controller = new AbortController();
+    controllers.push(controller);
     const timeout = setTimeout(() => controller.abort(), 8000);
     try {
       const res = await fetch(url, {
@@ -64,6 +66,8 @@ export async function GET(req: NextRequest) {
 
   try {
     const result = await Promise.any(attempts);
+    // 已有赢家就掐掉其余 4 个上游请求，否则它们会一直下载到超时
+    controllers.forEach((c) => c.abort());
     return new NextResponse(result.buf, {
       status: 200,
       headers: {

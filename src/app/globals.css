@@ -121,20 +121,16 @@ body {
   isolation: isolate;
   contain: layout paint style;
 }
+/* 搜索框与 Dock：同透明度、同模糊。
+   不加 contain:paint / isolation，否则会截断 backdrop-filter 的穿透范围 */
 .glass-search,
 .glass-dock {
   border: 1px solid var(--glass-border);
-  /* 输入框/Dock 需 backdrop-filter 穿透，不使用 contain:paint/isolate 避免截断模糊 */
-  will-change: backdrop-filter, transform;
-  transform: translateZ(0);
-}
-
-/* 搜索框与 Dock：同透明度，统一设计语言（模糊固定 20px，恢复默认） */
-.glass-search,
-.glass-dock {
   background: var(--glass-bg);
   backdrop-filter: blur(20px) saturate(160%);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
+  will-change: backdrop-filter, transform;
+  transform: translateZ(0);
 }
 
 .glass-search {
@@ -433,15 +429,10 @@ input[type="range"].accent-zinc-900 {
   }
 }
 
-/* 交互：所有按钮 hover 态 cursor-pointer */
+/* 交互：可点击元素统一手型（cursor 会继承到 :hover，无需重复声明） */
 button,
 [role="button"],
 a {
-  cursor: pointer;
-}
-button:hover,
-[role="button"]:hover,
-a:hover {
   cursor: pointer;
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { springEase } from "./motion";
 
 type Ref = React.RefObject<HTMLElement | null>;
 
@@ -147,5 +148,5 @@ export const limeDropdownMotion = {
   initial: { opacity: 0, y: 6, scale: 0.97, filter: "blur(6px)" } as unknown as Record<string, unknown>,
   animate: { opacity: 1, y: 0, scale: 1, filter: "blur(0px)" } as unknown as Record<string, unknown>,
   exit: { opacity: 0, y: 4, scale: 0.97, filter: "blur(4px)" } as unknown as Record<string, unknown>,
-  transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] } as unknown as Record<string, unknown>,
+  transition: { duration: 0.22, ease: springEase } as unknown as Record<string, unknown>,
 };

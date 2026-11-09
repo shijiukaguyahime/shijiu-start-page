@@ -13,6 +13,7 @@ import {
   CalendarDotsIcon,
 } from "@phosphor-icons/react";
 import { THEME_KEY, applyGlassTokens, readGlassOpacity, readTheme, resolveTheme, type ThemeMode } from "@/lib/theme";
+import { springEnterEase } from "@/lib/motion";
 
 const DOCK_BTN_BASE = "flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl shadow-sm transition-all duration-200";
 const DOCK_BTN_IDLE = "bg-white/85 hover:bg-white hover:shadow-md hover:-translate-y-1 active:scale-[0.95] dark:bg-zinc-800/85 dark:hover:bg-zinc-700";
@@ -58,7 +59,7 @@ export function DockBar({
       <motion.nav
         initial={reduce ? false : { y: 24, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
+        transition={{ duration: 0.45, ease: springEnterEase, delay: 0.1 }}
         aria-label="快捷方式 Dock 栏"
         className="pointer-events-auto flex max-w-[calc(100vw-16px)] items-center gap-2 overflow-x-auto overflow-y-visible rounded-[18px] glass-dock p-2 [-ms-overflow-style:none] [scrollbar-width:none] md:gap-2.5 md:overflow-visible [&::-webkit-scrollbar]:hidden"
       >

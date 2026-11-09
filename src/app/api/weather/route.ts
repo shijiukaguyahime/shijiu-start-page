@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createServerCache } from "@/lib/server-cache";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// 天气数据源：Open-Meteo（国际开放、无需 Key，实测可用），地理编码走 open-meteo 自家接口。
-// 注：曾尝试的 vvhan / oioweb 已实测失效（超时/断连），且从未参与组装数据——已删除，
-// 避免白白增加延迟和误导性的 source 标注。取不到就如实报错，不编造天气。
+/**
+ * 天气数据源：Open-Meteo（免费、无需 Key）。
+ * 兜底策略：
+ *  1) best_match 与 gfs_seamless 两个模型并发竞速，任一成功即用，避免单一模型冷启动超时；
+ *  2) 超时从 5s 放宽到 9s（实测主站冷启动可达 5.6s，原值会误杀正常响应）；
+ *  3) 上游全挂时返回本进程最后一次成功数据，并标 stale，前端显示「缓存」而不是空白；
+ *  4) 坐标定位不再请求 Open-Meteo 的 /v1/reverse（该端点实测 404），改为本地主要城市就近匹配；
+ *  5) 地理编码限定中国结果，避免中文同名城市被匹配到国外。
+ * 数值预报的 current 是模型当前时刻值，不是气象站实况，返回体里如实标注。
+ */
 
 const WMO_TEXT: Record<number, string> = {
   0: "晴",
@@ -97,75 +105,211 @@ const CITY_LATLNG: Record<string, { lat: number; lon: number }> = {
   银川: { lat: 38.4872, lon: 106.2309 },
 };
 
-async function fetchWithTimeout(url: string, ms = 3500) {
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), ms);
-  try {
-    const r = await fetch(url, { signal: controller.signal, cache: "no-store", headers: { "User-Agent": "Mozilla/5.0 start-page weather" } });
-    clearTimeout(t);
-    return r;
-  } catch (e) {
-    clearTimeout(t);
-    throw e;
+/** 常见区县名在开源地理编码里容易匹配到国外同名地，直接映射到所属主要城市 */
+const CITY_ALIAS: Record<string, string> = {
+  浦东新区: "上海",
+  浦东: "上海",
+  海淀区: "北京",
+  朝阳区: "北京",
+  南山区: "深圳",
+  天河区: "广州",
+  西湖区: "杭州",
+  滨江区: "杭州",
+  姑苏区: "苏州",
+  渝中区: "重庆",
+};
+
+type DailyItem = { date: string; max: number; min: number; code: number; text: string; icon: string; precip: number | null };
+
+type ForecastResponse = {
+  current: {
+    temperature_2m: number;
+    weather_code: number;
+    relative_humidity_2m: number;
+    wind_speed_10m: number;
+    apparent_temperature: number;
+    time: string;
+  };
+  daily: {
+    time: string[];
+    temperature_2m_max: number[];
+    temperature_2m_min: number[];
+    weather_code: number[];
+    precipitation_probability_max: (number | null)[];
+  };
+};
+
+type WeatherPayload = {
+  city: string;
+  lat: number;
+  lon: number;
+  current: {
+    temp: number;
+    feelsLike: number;
+    humidity: number;
+    wind: number;
+    code: number;
+    text: string;
+    icon: string;
+    time: string;
+  };
+  daily: DailyItem[];
+  source: string;
+  updateTime: string;
+  model: string;
+  locationSource: "city" | "coords";
+  stale?: boolean;
+  notice?: string;
+};
+
+const WEATHER_TTL = 10 * 60_000;
+const cache = createServerCache<WeatherPayload>(WEATHER_TTL, 64);
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLon = (lon2 - lon1) * rad;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/** 逆地理：就近匹配主要城市，超过阈值就如实显示「当前位置」 */
+function nearestCity(lat: number, lon: number): string | null {
+  let best: { name: string; km: number } | null = null;
+  for (const [name, p] of Object.entries(CITY_LATLNG)) {
+    const km = haversineKm(lat, lon, p.lat, p.lon);
+    if (!best || km < best.km) best = { name, km };
   }
+  return best && best.km <= 120 ? best.name : null;
 }
 
 async function geocodeCity(city: string): Promise<{ lat: number; lon: number; name: string } | null> {
-  if (CITY_LATLNG[city]) {
-    const v = CITY_LATLNG[city];
-    return { lat: v.lat, lon: v.lon, name: city };
+  const short = city.replace(/(市|省|自治区|特别行政区)$/g, "").trim();
+  const mapped = CITY_ALIAS[short] ?? short;
+  if (CITY_LATLNG[mapped]) {
+    const v = CITY_LATLNG[mapped];
+    return { lat: v.lat, lon: v.lon, name: mapped };
   }
-  // 去掉 市/省后缀后重试
-  const short = city.replace(/(市|省|自治区|特别行政区)$/g, "");
-  if (CITY_LATLNG[short]) {
-    const v = CITY_LATLNG[short];
-    return { lat: v.lat, lon: v.lon, name: short };
-  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000);
   try {
-    const r = await fetchWithTimeout(
-      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(short)}&count=1&language=zh&format=json`,
-      4000,
+    const r = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(short)}&count=5&language=zh&format=json`,
+      { signal: controller.signal, cache: "no-store", headers: { "User-Agent": "Mozilla/5.0 start-page weather" } },
     );
     if (!r.ok) return null;
-    const j = (await r.json()) as { results?: Array<{ latitude: number; longitude: number; name: string }> };
-    if (j.results && j.results[0]) {
-      return { lat: j.results[0].latitude, lon: j.results[0].longitude, name: j.results[0].name };
-    }
-  } catch {}
-  return null;
+    const j = (await r.json()) as {
+      results?: Array<{ latitude: number; longitude: number; name: string; country_code?: string }>;
+    };
+    const list = j.results ?? [];
+    // 同一中文名在国外也有同名地，优先取中国结果
+    const hit = list.find((x) => x.country_code === "CN") ?? list[0];
+    if (!hit) return null;
+    return { lat: hit.latitude, lon: hit.longitude, name: hit.name || short };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-async function reverseGeocode(lat: number, lon: number): Promise<string | null> {
+async function fetchForecast(
+  lat: number,
+  lon: number,
+  model: string,
+  signal: AbortSignal,
+): Promise<{ data: ForecastResponse; model: string }> {
+  const url =
+    `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+    `&current=temperature_2m,weather_code,relative_humidity_2m,wind_speed_10m,apparent_temperature` +
+    `&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max` +
+    `&timezone=Asia%2FShanghai&forecast_days=14&cell_selection=nearest&models=${model}`;
+  const r = await fetch(url, {
+    signal,
+    cache: "no-store",
+    headers: { "User-Agent": "Mozilla/5.0 start-page weather" },
+  });
+  if (!r.ok) throw new Error(`open-meteo ${r.status}`);
+  const j = (await r.json()) as ForecastResponse;
+  if (!j.current || !j.daily?.time) throw new Error("open-meteo 返回缺失 current/daily");
+  return { data: j, model };
+}
+
+/** 两个模型并发，取首个成功结果；成功后立刻掐掉另一个，避免上游连接白白挂着 */
+async function raceForecast(lat: number, lon: number) {
+  const models = ["best_match", "gfs_seamless"];
+  const controllers = models.map(() => new AbortController());
+  const timer = setTimeout(() => controllers.forEach((c) => c.abort()), 9000);
   try {
-    const r = await fetchWithTimeout(
-      `https://geocoding-api.open-meteo.com/v1/reverse?latitude=${lat}&longitude=${lon}&language=zh`,
-      4000,
-    );
-    if (!r.ok) return null;
-    const j = (await r.json()) as { results?: Array<{ name: string; admin1?: string }> };
-    if (j.results && j.results[0]) return j.results[0].name || j.results[0].admin1 || null;
-  } catch {}
-  return null;
+    return await Promise.any(models.map((m, i) => fetchForecast(lat, lon, m, controllers[i].signal)));
+  } finally {
+    clearTimeout(timer);
+    controllers.forEach((c) => c.abort());
+  }
 }
 
-type DailyItem = { date: string; max: number; min: number; code: number; text: string; icon: string };
+function buildPayload(
+  data: ForecastResponse,
+  city: string,
+  lat: number,
+  lon: number,
+  model: string,
+  locationSource: "city" | "coords",
+): WeatherPayload {
+  const cur = data.current;
+  const daily = data.daily;
+  return {
+    city,
+    lat,
+    lon,
+    current: {
+      temp: Math.round(cur.temperature_2m),
+      feelsLike: Math.round(cur.apparent_temperature ?? cur.temperature_2m),
+      humidity: cur.relative_humidity_2m,
+      wind: cur.wind_speed_10m,
+      code: cur.weather_code,
+      text: wmoToText(cur.weather_code),
+      icon: wmoToIcon(cur.weather_code),
+      time: cur.time,
+    },
+    daily: daily.time.map((d, i) => ({
+      date: d,
+      max: Math.round(daily.temperature_2m_max[i]),
+      min: Math.round(daily.temperature_2m_min[i]),
+      code: daily.weather_code[i],
+      text: wmoToText(daily.weather_code[i]),
+      icon: wmoToIcon(daily.weather_code[i]),
+      precip: daily.precipitation_probability_max?.[i] ?? null,
+    })),
+    source: "open-meteo",
+    updateTime: new Date().toISOString(),
+    model,
+    locationSource,
+    notice: "数值预报的当前时刻值，与本地实况可能有偏差",
+  };
+}
 
 export async function GET(req: NextRequest) {
   const cityParam = req.nextUrl.searchParams.get("city")?.trim() || "上海";
   const latParam = req.nextUrl.searchParams.get("lat");
   const lonParam = req.nextUrl.searchParams.get("lon");
 
+  let lat = NaN;
+  let lon = NaN;
+  let resolvedCity = cityParam;
+  let locationSource: "city" | "coords" = "city";
+
   try {
-    let lat: number;
-    let lon: number;
-    let resolvedCity: string;
     const qLat = latParam ? Number(latParam) : NaN;
     const qLon = lonParam ? Number(lonParam) : NaN;
     if (Number.isFinite(qLat) && Number.isFinite(qLon)) {
       lat = qLat;
       lon = qLon;
-      // 逆解析失败不用默认城市名顶替，用坐标标注，避免张冠李戴
-      resolvedCity = (await reverseGeocode(lat, lon)) ?? `${lat.toFixed(2)}°, ${lon.toFixed(2)}°`;
+      resolvedCity = nearestCity(lat, lon) ?? "当前位置";
+      locationSource = "coords";
     } else {
       const geo = await geocodeCity(cityParam);
       if (!geo) {
@@ -176,54 +320,43 @@ export async function GET(req: NextRequest) {
       resolvedCity = geo.name;
     }
 
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code,relative_humidity_2m,wind_speed_10m,apparent_temperature&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max&timezone=Asia/Shanghai&forecast_days=14`;
-    const r = await fetchWithTimeout(url, 5000);
-    if (!r.ok) throw new Error(`open-meteo ${r.status}`);
-    const j = (await r.json()) as {
-      current?: { temperature_2m: number; weather_code: number; relative_humidity_2m: number; wind_speed_10m: number; apparent_temperature: number; time: string };
-      daily?: { time: string[]; temperature_2m_max: number[]; temperature_2m_min: number[]; weather_code: number[]; precipitation_probability_max: (number | null)[] };
-    };
+    const coordKey = `${lat.toFixed(2)},${lon.toFixed(2)}`;
+    const cityKey = `city:${cityParam.toLowerCase()}`;
+    const fresh = cache.fresh(coordKey);
+    if (fresh) {
+      return NextResponse.json(
+        { ...fresh, city: resolvedCity, locationSource },
+        { headers: { "Cache-Control": "public, s-maxage=600, stale-while-revalidate=1200" } },
+      );
+    }
 
-    const cur = j.current;
-    const daily = j.daily;
-    // 上游缺字段就报错，不用 26°晴之类的假数据顶替
-    if (!cur || !daily?.time) throw new Error("open-meteo 返回缺失 current/daily");
-
-    const current = {
-      temp: Math.round(cur.temperature_2m),
-      feelsLike: Math.round(cur.apparent_temperature ?? cur.temperature_2m),
-      humidity: cur.relative_humidity_2m,
-      wind: cur.wind_speed_10m,
-      code: cur.weather_code,
-      text: wmoToText(cur.weather_code),
-      icon: wmoToIcon(cur.weather_code),
-      time: cur.time,
-    };
-
-    const dailyList: DailyItem[] = daily.time.map((d, i) => ({
-      date: d,
-      max: Math.round(daily.temperature_2m_max[i]),
-      min: Math.round(daily.temperature_2m_min[i]),
-      code: daily.weather_code[i],
-      text: wmoToText(daily.weather_code[i]),
-      icon: wmoToIcon(daily.weather_code[i]),
-      precip: daily.precipitation_probability_max?.[i] ?? null,
-    }));
-
-    return NextResponse.json(
-      {
-        city: resolvedCity,
-        lat,
-        lon,
-        current,
-        daily: dailyList,
-        source: "open-meteo",
-        updateTime: new Date().toISOString(),
-      },
-      { headers: { "Cache-Control": "public, s-maxage=600, stale-while-revalidate=1200" } },
-    );
+    const { data, model } = await raceForecast(lat, lon);
+    const payload = buildPayload(data, resolvedCity, lat, lon, model, locationSource);
+    cache.set(coordKey, payload);
+    cache.set(cityKey, payload);
+    return NextResponse.json(payload, {
+      headers: { "Cache-Control": "public, s-maxage=600, stale-while-revalidate=1200" },
+    });
   } catch (e) {
-    // 取不到就如实报错（前端会显示错误态），不返回假天气
-    return NextResponse.json({ error: "天气获取失败，请稍后重试", detail: String(e) }, { status: 502, headers: { "Cache-Control": "no-store" } });
+    // 上游全挂：返回最后一次成功数据，让面板显示「缓存」而不是空白或编造天气
+    const coordKey = Number.isFinite(lat) && Number.isFinite(lon) ? `${lat.toFixed(2)},${lon.toFixed(2)}` : "";
+    const old = (coordKey && cache.stale(coordKey)) || cache.stale(`city:${cityParam.toLowerCase()}`);
+    const age = coordKey ? cache.age(coordKey) : null;
+    if (old) {
+      return NextResponse.json(
+        {
+          ...old,
+          city: resolvedCity === cityParam ? old.city : resolvedCity,
+          source: `${old.source}·缓存`,
+          stale: true,
+          notice: age != null ? `天气服务暂不可用，显示 ${Math.round(age / 60000)} 分钟前的缓存数据` : "天气服务暂不可用，显示上次成功获取的数据",
+        },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    return NextResponse.json(
+      { error: "天气获取失败，请稍后重试", detail: String(e) },
+      { status: 502, headers: { "Cache-Control": "no-store" } },
+    );
   }
 }
